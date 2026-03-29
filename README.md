@@ -198,3 +198,21 @@ Distributed under the CC BY-NC-SA 4.0 License. See `LICENSE.txt` for more inform
 * [Best-README-Template](https://github.com/othneildrew/Best-README-Template) — README template
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+[contributors-shield]: https://img.shields.io/github/contributors/pinweichen/mira_the_assistant.svg?style=for-the-badge
+[contributors-url]: https://github.com/pinweichen/mira_the_assistant/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/pinweichen/mira_the_assistant.svg?style=for-the-badge
+[forks-url]: https://github.com/pinweichen/mira_the_assistant/network/members
+[stars-shield]: https://img.shields.io/github/stars/pinweichen/mira_the_assistant.svg?style=for-the-badge
+[stars-url]: https://github.com/pinweichen/mira_the_assistant/stargazers
+[issues-shield]: https://img.shields.io/github/issues/pinweichen/mira_the_assistant.svg?style=for-the-badge
+[issues-url]: https://github.com/pinweichen/mira_the_assistant/issues
+[license-shield]: https://img.shields.io/github/license/pinweichen/mira_the_assistant.svg?style=for-the-badge
+[license-url]: https://github.com/pinweichen/mira_the_assistant/blob/master/LICENSE.txt
+[product-screenshot]: images/screenshot.png
+[claudecode-url]: https://claude.ai/code
+[whispercpp-url]: https://github.com/ggerganov/whisper.cpp
