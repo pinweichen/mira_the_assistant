@@ -1,0 +1,806 @@
+#!/bin/bash
+# mira-assistant-setup — One-command Claude Code Executive Assistant installer
+# macOS v1
+#
+# Usage: ./setup.sh
+# Idempotent: safe to run multiple times; completed phases are skipped.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# ─── Color helpers ─────────────────────────────────────────────────────────────
+
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+info()    { echo -e "${GREEN}  ✓${NC} $1"; }
+warn()    { echo -e "${YELLOW}  ⚠${NC} $1"; }
+err()     { echo -e "${RED}  ✗${NC} $1" >&2; }
+section() { echo -e "\n${BOLD}${BLUE}$1${NC}"; }
+
+# ─── Input sanitizer for sed (escape & and |) ──────────────────────────────────
+
+sanitize() {
+  local val="$1"
+  val="${val//&/\\&}"
+  val="${val//|/\\|}"
+  echo "$val"
+}
+
+# ─── Global state (set across phases) ─────────────────────────────────────────
+
+ASSISTANT_NAME=""
+USER_NAME=""
+USER_ROLE=""
+PROJECT_COUNT=""
+WORK_HOURS=""
+TIMEZONE=""
+WORK_EMAIL=""
+GOOGLE_MEET=""
+WORKSPACE_DIR=""
+VOICE_ENGINE=""    # say | vibevoice | none
+VOICE_NAME=""
+SKIP_PERMISSIONS=false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 0: Preflight
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_preflight() {
+  # Verify macOS
+  if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: This installer requires macOS." >&2
+    exit 1
+  fi
+
+  # Verify Homebrew (offer to install if missing)
+  if ! command -v brew &>/dev/null; then
+    echo "Homebrew not found. Install it? (Y/n)"
+    read -r yn
+    if [[ "$yn" != "n" && "$yn" != "N" ]]; then
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      # Source brew environment for Apple Silicon
+      if [[ -f /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+      elif [[ -f /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+      fi
+      if ! command -v brew &>/dev/null; then
+        echo "Error: Homebrew install failed. Install manually: https://brew.sh" >&2
+        exit 1
+      fi
+    else
+      echo "Error: Homebrew is required." >&2
+      exit 1
+    fi
+  fi
+
+  # Verify claude CLI
+  if ! command -v claude &>/dev/null; then
+    echo "Error: Claude Code CLI not found on PATH." >&2
+    echo "  Install it: https://docs.anthropic.com/en/docs/claude-code" >&2
+    exit 1
+  fi
+
+  # Verify git
+  if ! command -v git &>/dev/null; then
+    echo "Error: git is required. Install via: xcode-select --install" >&2
+    exit 1
+  fi
+
+  # Banner
+  cat << 'BANNER'
+
+╔══════════════════════════════════════════╗
+║  Claude Code Executive Assistant Setup   ║
+╚══════════════════════════════════════════╝
+BANNER
+  echo ""
+  echo "This will install:"
+  echo "  • System dependencies (whisper-cpp, ffmpeg, node, bun, jq)"
+  echo "  • Claude Code plugins (discord, remember, claude-md-management,"
+  echo "                         hookify, superpowers, gws)"
+  echo "  • gstack skills"
+  echo "  • Whisper speech-to-text model (~150MB)"
+  echo "  • Voice setup (optional)"
+  echo "  • Personalized assistant workspace"
+  echo "  • macOS launcher app"
+  echo ""
+  echo -n "Continue? (Y/n): "
+  read -r confirm
+  if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
+    echo "Setup cancelled."
+    exit 0
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 1: System Dependencies
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_system_deps() {
+  section "[1/9] Installing system dependencies..."
+  local pkgs=(whisper-cpp ffmpeg node bun jq)
+  for pkg in "${pkgs[@]}"; do
+    if brew list "$pkg" &>/dev/null; then
+      info "$pkg (already installed)"
+    else
+      echo "  Installing $pkg..."
+      if brew install "$pkg" 2>&1; then
+        info "$pkg installed"
+      else
+        warn "Failed to install $pkg — continuing (some features may not work)"
+      fi
+    fi
+  done
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 2: Claude Code Plugins
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_plugins() {
+  section "[2/9] Installing Claude Code plugins..."
+  local plugins=(discord remember claude-md-management hookify superpowers gws)
+
+  for plugin in "${plugins[@]}"; do
+    # Check install by directory presence
+    if [[ -d "$HOME/.claude/plugins/$plugin" ]]; then
+      info "$plugin (already installed)"
+      continue
+    fi
+    # Also check installed_plugins.json if it exists
+    local json="$HOME/.claude/plugins/installed_plugins.json"
+    if [[ -f "$json" ]] && grep -q "\"$plugin\"" "$json" 2>/dev/null; then
+      info "$plugin (already installed)"
+      continue
+    fi
+
+    echo "  Installing plugin: $plugin..."
+    # Try --yes flag first (non-interactive), fall back without it
+    if claude plugin add "$plugin" --yes 2>/dev/null; then
+      info "$plugin installed"
+    elif claude plugin add "$plugin" 2>/dev/null; then
+      info "$plugin installed"
+    else
+      warn "Could not install plugin: $plugin"
+      echo "  Install manually: claude plugin add $plugin"
+    fi
+  done
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 3: gstack Skills
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_gstack() {
+  section "[3/9] Installing gstack skills..."
+  local gstack_dir="$HOME/.claude/skills/gstack"
+
+  if [[ -d "$gstack_dir/.git" ]]; then
+    info "gstack already installed, updating..."
+    if git -C "$gstack_dir" pull origin main 2>/dev/null; then
+      info "gstack updated"
+    else
+      warn "Could not update gstack (offline or repo access issue)"
+    fi
+  else
+    mkdir -p "$HOME/.claude/skills"
+    if git clone https://github.com/garrytan/gstack.git "$gstack_dir" 2>/dev/null; then
+      info "gstack installed"
+    else
+      warn "Could not clone gstack (may be private or network unavailable)"
+      echo ""
+      echo "  Manual install:"
+      echo "    git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack"
+      echo ""
+    fi
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 4: Whisper Model
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_whisper() {
+  section "[4/9] Setting up Whisper speech-to-text model..."
+  local model_dir="$HOME/.local/share/whisper-cpp/models"
+  local model_file="$model_dir/ggml-base.en.bin"
+  local model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+  local min_size=$(( 100 * 1024 * 1024 ))  # 100MB minimum
+
+  # Check if already present and valid
+  if [[ -f "$model_file" ]]; then
+    local file_size
+    file_size=$(stat -f%z "$model_file" 2>/dev/null || echo 0)
+    if [[ "$file_size" -gt "$min_size" ]]; then
+      info "Whisper model already present ($(( file_size / 1024 / 1024 ))MB)"
+      return
+    else
+      warn "Existing model looks incomplete ($(( file_size / 1024 / 1024 ))MB) — re-downloading..."
+      rm -f "$model_file"
+    fi
+  fi
+
+  mkdir -p "$model_dir"
+  echo "  Downloading ggml-base.en.bin (~150MB)..."
+
+  local attempt=0
+  local downloaded=false
+  while [[ $attempt -lt 3 ]]; do
+    attempt=$(( attempt + 1 ))
+    echo "  Attempt $attempt/3..."
+
+    if curl -fL --progress-bar --retry 2 --retry-delay 3 \
+        -o "${model_file}.tmp" "$model_url"; then
+      local file_size
+      file_size=$(stat -f%z "${model_file}.tmp" 2>/dev/null || echo 0)
+      if [[ "$file_size" -gt "$min_size" ]]; then
+        mv "${model_file}.tmp" "$model_file"
+        info "Whisper model downloaded ($(( file_size / 1024 / 1024 ))MB)"
+        downloaded=true
+        break
+      else
+        warn "Download incomplete ($(( file_size / 1024 / 1024 ))MB)"
+        rm -f "${model_file}.tmp"
+      fi
+    else
+      warn "Download failed (attempt $attempt)"
+      rm -f "${model_file}.tmp"
+    fi
+    [[ $attempt -lt 3 ]] && sleep 5
+  done
+
+  if [[ "$downloaded" != true ]]; then
+    warn "Could not download Whisper model after 3 attempts"
+    echo "  Voice transcription will not work until the model is downloaded."
+    echo ""
+    echo "  Manual download:"
+    echo "    mkdir -p ~/.local/share/whisper-cpp/models"
+    echo "    curl -fL -o ~/.local/share/whisper-cpp/models/ggml-base.en.bin \\"
+    echo "      $model_url"
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 5: Voice Setup
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_voice() {
+  section "[5/9] Voice setup..."
+  echo ""
+  echo "  Choose a voice for your assistant's replies:"
+  echo ""
+  echo "  Standard voices (macOS say — zero install):"
+  echo "    1) Allison (Enhanced)  — Female"
+  echo "    2) Ava (Premium)       — Female"
+  echo "    3) Samantha (Enhanced) — Female"
+  echo "    4) Zoe (Enhanced)      — Female"
+  echo "    5) Tom (Enhanced)      — Male"
+  echo "    6) Evan (Enhanced)     — Male"
+  echo "    7) Daniel              — Male (built-in)"
+  echo ""
+  echo "  Premium AI voice:"
+  echo "    8) VibeVoice AI        — Premium quality (Python + ~2.5GB download)"
+  echo ""
+  echo "    9) Skip — no voice replies"
+  echo ""
+  echo -n "  Select [1-9]: "
+  read -r voice_choice
+
+  case "$voice_choice" in
+    1) _setup_say_voice "Allison" ;;
+    2) _setup_say_voice "Ava" ;;
+    3) _setup_say_voice "Samantha" ;;
+    4) _setup_say_voice "Zoe" ;;
+    5) _setup_say_voice "Tom" ;;
+    6) _setup_say_voice "Evan" ;;
+    7) _setup_say_voice "Daniel" ;;
+    8) _setup_vibevoice ;;
+    9|"")
+      VOICE_ENGINE="none"
+      VOICE_NAME="none"
+      info "Skipped voice setup"
+      ;;
+    *)
+      warn "Invalid selection — skipping voice setup"
+      VOICE_ENGINE="none"
+      VOICE_NAME="none"
+      ;;
+  esac
+}
+
+# Install/verify a macOS say voice and optionally preview it
+_setup_say_voice() {
+  local voice="$1"
+  VOICE_ENGINE="say"
+  VOICE_NAME="$voice"
+
+  if say -v '?' 2>/dev/null | grep -qi "^${voice}[[:space:]]"; then
+    info "Voice '$voice' is available"
+    echo -n "  Preview? (Y/n): "
+    read -r preview
+    if [[ "$preview" != "n" && "$preview" != "N" ]]; then
+      say -v "$voice" "Hello, I'm your assistant. Ready to help." 2>/dev/null \
+        || warn "Preview failed — voice may need to be downloaded"
+    fi
+  else
+    warn "Voice '$voice' is not installed on this system."
+    echo ""
+    echo "  To install it:"
+    echo "  1. Open System Settings → Accessibility → Spoken Content"
+    echo "  2. Click 'Manage Voices...'"
+    echo "  3. Find '$voice' and click the download arrow"
+    echo ""
+    echo "  Press Enter to continue with $voice anyway (can install after setup)."
+    read -r _ignored
+  fi
+}
+
+# Install VibeVoice AI premium TTS
+_setup_vibevoice() {
+  VOICE_ENGINE="vibevoice"
+  VOICE_NAME="Carter"
+  echo ""
+  echo "  Setting up VibeVoice AI (~2.5GB download)..."
+
+  # Ensure Python 3.9+
+  if ! command -v python3 &>/dev/null; then
+    echo "  Installing Python 3..."
+    if ! brew install python 2>&1; then
+      warn "Could not install Python — falling back to no voice"
+      VOICE_ENGINE="none"; VOICE_NAME="none"; return
+    fi
+  fi
+
+  local py_minor
+  py_minor=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo 0)
+  if [[ "$py_minor" -lt 9 ]]; then
+    warn "Python 3.9+ required (found 3.$py_minor). Recommend: brew install python@3.12"
+  fi
+
+  # Install vibevoice package
+  echo "  Installing vibevoice package..."
+  if ! pip3 install vibevoice 2>&1; then
+    warn "Could not install vibevoice — falling back to no voice"
+    VOICE_ENGINE="none"; VOICE_NAME="none"; return
+  fi
+
+  # Ensure huggingface-cli is available
+  if ! command -v huggingface-cli &>/dev/null; then
+    pip3 install huggingface_hub 2>/dev/null || true
+  fi
+
+  # Download model (~2.5GB)
+  echo "  Downloading VibeVoice model (~2.5GB, may take several minutes)..."
+  if ! huggingface-cli download microsoft/VibeVoice-Realtime-0.5B 2>&1; then
+    warn "Could not download VibeVoice model — falling back to no voice"
+    echo "  Manual download later: huggingface-cli download microsoft/VibeVoice-Realtime-0.5B"
+    VOICE_ENGINE="none"; VOICE_NAME="none"; return
+  fi
+
+  info "VibeVoice AI installed (speaker: Carter)"
+  echo -n "  Preview? (Y/n): "
+  read -r preview
+  if [[ "$preview" != "n" && "$preview" != "N" ]]; then
+    python3 -m vibevoice.realtime \
+      --model microsoft/VibeVoice-Realtime-0.5B \
+      --text "Hello, I'm your assistant. Ready to help." \
+      --output /tmp/vv_preview.wav 2>/dev/null \
+      && afplay /tmp/vv_preview.wav 2>/dev/null \
+      || warn "Preview failed — VibeVoice may need additional setup"
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 6: Project Scaffolding
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_scaffolding() {
+  section "[6/9] Setting up your assistant workspace..."
+  echo ""
+
+  # ── Gather inputs ────────────────────────────────────────────────────────────
+
+  echo -n "  Assistant name [Mira]: "
+  read -r input
+  ASSISTANT_NAME="${input:-Mira}"
+
+  local default_workspace="$HOME/${ASSISTANT_NAME}_Assistant"
+  echo -n "  Workspace directory [$default_workspace]: "
+  read -r input
+  WORKSPACE_DIR="${input:-$default_workspace}"
+  WORKSPACE_DIR="${WORKSPACE_DIR/#\~/$HOME}"  # expand leading ~
+
+  while true; do
+    echo -n "  Your first name (required): "
+    read -r input
+    USER_NAME="${input:-}"
+    [[ -n "$USER_NAME" ]] && break
+    warn "Name is required — please enter your name."
+  done
+
+  echo -n "  Your role [professional]: "
+  read -r input
+  USER_ROLE="${input:-professional}"
+
+  echo -n "  Concurrent projects to track [5]: "
+  read -r input
+  PROJECT_COUNT="${input:-5}"
+
+  echo -n "  Working hours [9am - 6pm ET]: "
+  read -r input
+  WORK_HOURS="${input:-9am - 6pm ET}"
+
+  echo -n "  Timezone [America/New_York]: "
+  read -r input
+  TIMEZONE="${input:-America/New_York}"
+
+  while true; do
+    echo -n "  Work email (required): "
+    read -r input
+    WORK_EMAIL="${input:-}"
+    [[ -n "$WORK_EMAIL" ]] && break
+    warn "Work email is required."
+  done
+
+  echo -n "  Auto-add Google Meet links to meetings? (y/N): "
+  read -r input
+  GOOGLE_MEET="no"
+  [[ "$input" == "y" || "$input" == "Y" ]] && GOOGLE_MEET="yes"
+
+  echo ""
+
+  # ── Sanitize all inputs for sed ──────────────────────────────────────────────
+
+  local s_name;          s_name="$(sanitize "$ASSISTANT_NAME")"
+  local s_user;          s_user="$(sanitize "$USER_NAME")"
+  local s_role;          s_role="$(sanitize "$USER_ROLE")"
+  local s_count;         s_count="$(sanitize "$PROJECT_COUNT")"
+  local s_hours;         s_hours="$(sanitize "$WORK_HOURS")"
+  local s_tz;            s_tz="$(sanitize "$TIMEZONE")"
+  local s_email;         s_email="$(sanitize "$WORK_EMAIL")"
+  local s_meet;          s_meet="$(sanitize "$GOOGLE_MEET")"
+  local s_vname;         s_vname="$(sanitize "$VOICE_NAME")"
+  local s_vengine;       s_vengine="$(sanitize "$VOICE_ENGINE")"
+
+  # Transcription command (macOS whisper-cpp)
+  local transcribe_cmd='whisper-cpp --model ~/.local/share/whisper-cpp/models/ggml-base.en.bin --language en --output-txt "$1"'
+  local s_transcribe;    s_transcribe="$(sanitize "$transcribe_cmd")"
+
+  # TTS command based on voice engine
+  local tts_cmd=""
+  if [[ "$VOICE_ENGINE" == "say" ]]; then
+    tts_cmd="say -v \"$VOICE_NAME\" \"\$TEXT\" -o /tmp/assistant_voice.aiff && ffmpeg -i /tmp/assistant_voice.aiff -c:a libopus -b:a 64k /tmp/assistant_voice.ogg -y"
+  elif [[ "$VOICE_ENGINE" == "vibevoice" ]]; then
+    tts_cmd="python3 -m vibevoice.realtime --model microsoft/VibeVoice-Realtime-0.5B --text \"\$TEXT\" --output /tmp/assistant_voice.wav && ffmpeg -i /tmp/assistant_voice.wav -c:a libopus -b:a 64k /tmp/assistant_voice.ogg -y"
+  fi
+  local s_tts; s_tts="$(sanitize "$tts_cmd")"
+
+  # ── Create directory structure ───────────────────────────────────────────────
+
+  if [[ -d "$WORKSPACE_DIR" ]]; then
+    warn "Workspace already exists — adding missing files only"
+  else
+    mkdir -p "$WORKSPACE_DIR"
+    info "Created workspace: $WORKSPACE_DIR"
+  fi
+
+  mkdir -p \
+    "$WORKSPACE_DIR/projects" \
+    "$WORKSPACE_DIR/templates" \
+    "$WORKSPACE_DIR/tools" \
+    "$WORKSPACE_DIR/.claude" \
+    "$WORKSPACE_DIR/.remember"
+
+  # ── Template substitution helper ─────────────────────────────────────────────
+  # Copies src → dst with all {{VAR}} substitutions applied.
+  # Skips if dst already exists (idempotent).
+
+  _apply_template() {
+    local src="$1" dst="$2"
+    [[ ! -f "$src" ]] && return    # source doesn't exist yet (parallel writer may add it later)
+    [[ -f "$dst" ]]  && return    # don't overwrite existing user files
+
+    sed \
+      -e "s|{{ASSISTANT_NAME}}|${s_name}|g" \
+      -e "s|{{USER_NAME}}|${s_user}|g" \
+      -e "s|{{USER_ROLE}}|${s_role}|g" \
+      -e "s|{{PROJECT_COUNT}}|${s_count}|g" \
+      -e "s|{{WORK_HOURS}}|${s_hours}|g" \
+      -e "s|{{TIMEZONE}}|${s_tz}|g" \
+      -e "s|{{WORK_EMAIL}}|${s_email}|g" \
+      -e "s|{{GOOGLE_MEET}}|${s_meet}|g" \
+      -e "s|{{VOICE_NAME}}|${s_vname}|g" \
+      -e "s|{{VOICE_ENGINE}}|${s_vengine}|g" \
+      -e "s|{{TRANSCRIBE_CMD}}|${s_transcribe}|g" \
+      -e "s|{{TTS_CMD}}|${s_tts}|g" \
+      "$src" > "$dst"
+  }
+
+  # CLAUDE.md — special handling for {{#VOICE_ENABLED}} blocks
+  local claude_tpl="$SCRIPT_DIR/templates/CLAUDE.md.template"
+  local claude_dst="$WORKSPACE_DIR/.claude/CLAUDE.md"
+  if [[ -f "$claude_tpl" && ! -f "$claude_dst" ]]; then
+    _apply_template "$claude_tpl" "${claude_dst}.tmp"
+
+    if [[ "$VOICE_ENGINE" == "say" ]]; then
+      # Keep say section, remove vibevoice section
+      perl -0777 -i -pe \
+        's/\{\{#VOICE_VIBEVOICE\}\}.*?\{\{\/VOICE_VIBEVOICE\}\}\n?//gs' \
+        "${claude_dst}.tmp"
+      sed -i '' \
+        -e '/{{#VOICE_SAY}}/d' \
+        -e '/{{\/VOICE_SAY}}/d' \
+        "${claude_dst}.tmp"
+    elif [[ "$VOICE_ENGINE" == "vibevoice" ]]; then
+      # Keep vibevoice section, remove say section
+      perl -0777 -i -pe \
+        's/\{\{#VOICE_SAY\}\}.*?\{\{\/VOICE_SAY\}\}\n?//gs' \
+        "${claude_dst}.tmp"
+      sed -i '' \
+        -e '/{{#VOICE_VIBEVOICE}}/d' \
+        -e '/{{\/VOICE_VIBEVOICE}}/d' \
+        "${claude_dst}.tmp"
+    else
+      # No voice — remove both sections
+      perl -0777 -i -pe \
+        's/\{\{#VOICE_SAY\}\}.*?\{\{\/VOICE_SAY\}\}\n?//gs; s/\{\{#VOICE_VIBEVOICE\}\}.*?\{\{\/VOICE_VIBEVOICE\}\}\n?//gs' \
+        "${claude_dst}.tmp"
+    fi
+    mv "${claude_dst}.tmp" "$claude_dst"
+  fi
+
+  # Remaining template files
+  local T="$SCRIPT_DIR/templates"
+  _apply_template "$T/tasks.md"           "$WORKSPACE_DIR/projects/tasks.md"
+  _apply_template "$T/tracker.md"         "$WORKSPACE_DIR/projects/tracker.md"
+  _apply_template "$T/email-followup.md"  "$WORKSPACE_DIR/templates/email-followup.md"
+  _apply_template "$T/meeting-notes.md"   "$WORKSPACE_DIR/templates/meeting-notes.md"
+  _apply_template "$T/status-update.md"   "$WORKSPACE_DIR/templates/status-update.md"
+  _apply_template "$T/transcribe.sh"      "$WORKSPACE_DIR/tools/transcribe.sh"
+  chmod +x "$WORKSPACE_DIR/tools/transcribe.sh" 2>/dev/null || true
+
+  # ── Copy curated settings.local.json from template ──────────────────────────
+  local settings_dst="$WORKSPACE_DIR/.claude/settings.local.json"
+  if [[ ! -f "$settings_dst" ]]; then
+    cp "$SCRIPT_DIR/templates/settings.local.json" "$settings_dst"
+    info "Created settings.local.json (curated day-1 permissions)"
+  fi
+
+  info "Workspace ready at $WORKSPACE_DIR"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 7: Discord Setup
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_discord() {
+  section "[7/9] Discord setup..."
+  echo -n "  Set up Discord messaging? (y/N): "
+  read -r setup_discord
+
+  if [[ "$setup_discord" == "y" || "$setup_discord" == "Y" ]]; then
+    echo -n "  Enter your Discord bot token (input hidden): "
+    read -rs bot_token
+    echo ""
+
+    if [[ -n "$bot_token" ]]; then
+      mkdir -p "$HOME/.claude/channels/discord"
+      printf 'DISCORD_TOKEN=%s\n' "$bot_token" > "$HOME/.claude/channels/discord/.env"
+      chmod 600 "$HOME/.claude/channels/discord/.env"
+      info "Discord bot token saved"
+      echo ""
+      echo "  Next steps to connect your bot:"
+      echo "  1. Go to https://discord.com/developers/applications"
+      echo "  2. Select your bot application"
+      echo "  3. Under OAuth2 → URL Generator, select these scopes + permissions:"
+      echo "       Scopes: bot"
+      echo "       Permissions: Read Messages/View Channels, Send Messages,"
+      echo "                    Attach Files, Read Message History"
+      echo "  4. Copy the generated URL and open it in your browser to invite the bot"
+    else
+      warn "No token entered — skipping Discord setup"
+    fi
+  else
+    info "Skipped Discord setup"
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 8: Create Launcher App
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_launcher() {
+  section "[8/9] Creating macOS launcher app..."
+
+  # ── Consent prompt for --dangerously-skip-permissions ────────────────────────
+
+  echo ""
+  echo "  The launcher can start your assistant without per-action prompts."
+  echo "  This uses Claude Code's --dangerously-skip-permissions flag."
+  echo ""
+  echo "  What this means:"
+  echo "    • Your assistant runs tools (bash, file I/O) without asking each time"
+  echo "    • Convenient for a trusted personal assistant"
+  echo "    • Only enable if you trust the CLAUDE.md in your workspace"
+  echo ""
+  echo -n "  Enable auto-approve mode? (y/N): "
+  read -r consent
+  if [[ "$consent" == "y" || "$consent" == "Y" ]]; then
+    SKIP_PERMISSIONS=true
+    echo "  Auto-approve enabled."
+  else
+    SKIP_PERMISSIONS=false
+    echo "  Auto-approve disabled — assistant will prompt before each action."
+  fi
+
+  local skip_flag=""
+  [[ "$SKIP_PERMISSIONS" == true ]] && skip_flag="--dangerously-skip-permissions"
+
+  # ── Build macOS .app bundle ───────────────────────────────────────────────────
+
+  local app_dir="$HOME/Applications/${ASSISTANT_NAME}.app"
+  local contents_dir="$app_dir/Contents"
+  local macos_dir="$contents_dir/MacOS"
+  mkdir -p "$macos_dir"
+
+  # Info.plist — use template if it has real content, otherwise write inline
+  local plist_tpl="$SCRIPT_DIR/launcher/Info.plist.template"
+  local plist_dst="$contents_dir/Info.plist"
+  local tpl_lines; tpl_lines=$(wc -l < "$plist_tpl" 2>/dev/null || echo 0)
+
+  if [[ "$tpl_lines" -gt 5 ]]; then
+    sed \
+      -e "s|{{ASSISTANT_NAME}}|${ASSISTANT_NAME}|g" \
+      -e "s|{{WORKSPACE_DIR}}|${WORKSPACE_DIR}|g" \
+      "$plist_tpl" > "$plist_dst"
+  else
+    cat > "$plist_dst" << PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>${ASSISTANT_NAME}</string>
+  <key>CFBundleDisplayName</key>
+  <string>${ASSISTANT_NAME}</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.claude-assistant.${ASSISTANT_NAME}</string>
+  <key>CFBundleVersion</key>
+  <string>1.0</string>
+  <key>CFBundleExecutable</key>
+  <string>launcher</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSUIElement</key>
+  <false/>
+</dict>
+</plist>
+PLIST_EOF
+  fi
+
+  # Launcher script (inside .app/Contents/MacOS/) — use template if available
+  local launcher_tpl="$SCRIPT_DIR/launcher/launcher.template"
+  local launcher_dst="$macos_dir/launcher"
+  local launcher_lines; launcher_lines=$(wc -l < "$launcher_tpl" 2>/dev/null || echo 0)
+
+  if [[ "$launcher_lines" -gt 2 ]]; then
+    sed \
+      -e "s|{{ASSISTANT_NAME}}|${ASSISTANT_NAME}|g" \
+      -e "s|{{WORKSPACE_DIR}}|${WORKSPACE_DIR}|g" \
+      -e "s|{{SKIP_PERMISSIONS_FLAG}}|${skip_flag}|g" \
+      "$launcher_tpl" > "$launcher_dst"
+  else
+    # Write launcher inline — opens Terminal at the workspace and runs claude
+    cat > "$launcher_dst" << LAUNCHER_EOF
+#!/bin/bash
+# ${ASSISTANT_NAME} Assistant — macOS App Launcher
+WORKSPACE="${WORKSPACE_DIR}"
+CLAUDE_CMD=\$(command -v claude 2>/dev/null || echo "/usr/local/bin/claude")
+
+osascript << OSASCRIPT
+tell application "Terminal"
+  activate
+  do script "cd '\${WORKSPACE}' && '\${CLAUDE_CMD}' --channels plugin:discord@claude-plugins-official ${skip_flag}"
+end tell
+OSASCRIPT
+LAUNCHER_EOF
+  fi
+  chmod +x "$launcher_dst"
+
+  # ── start.sh in workspace root ───────────────────────────────────────────────
+
+  local start_sh="${WORKSPACE_DIR}/start.sh"
+  if [[ ! -f "$start_sh" ]]; then
+    cat > "$start_sh" << STARTSH_EOF
+#!/bin/bash
+# Start ${ASSISTANT_NAME} Assistant
+# Usage: ./start.sh
+cd "${WORKSPACE_DIR}"
+exec claude --channels plugin:discord@claude-plugins-official ${skip_flag}
+STARTSH_EOF
+    chmod +x "$start_sh"
+    info "Created start.sh"
+  fi
+
+  info "Launcher app: ~/Applications/${ASSISTANT_NAME}.app"
+  info "Drag it to the Dock for quick access"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 9: Summary
+# ══════════════════════════════════════════════════════════════════════════════
+
+phase_summary() {
+  section "[9/9] Setup complete!"
+  echo ""
+  echo "  ┌─────────────────────────────────────────────┐"
+  printf "  │  %-43s │\n" "${ASSISTANT_NAME} Assistant is ready!"
+  echo "  └─────────────────────────────────────────────┘"
+  echo ""
+  echo "  Installed:"
+  echo "    Workspace : $WORKSPACE_DIR"
+  echo "    Launcher  : ~/Applications/${ASSISTANT_NAME}.app"
+
+  case "$VOICE_ENGINE" in
+    say)        echo "    Voice     : $VOICE_NAME (macOS say)" ;;
+    vibevoice)  echo "    Voice     : VibeVoice AI (speaker: $VOICE_NAME)" ;;
+    *)          echo "    Voice     : disabled" ;;
+  esac
+
+  if [[ -f "$HOME/.claude/channels/discord/.env" ]]; then
+    echo "    Discord   : configured ✓"
+  else
+    echo "    Discord   : not configured (re-run setup to add)"
+  fi
+
+  if [[ "$SKIP_PERMISSIONS" == true ]]; then
+    echo "    Mode      : auto-approve (--dangerously-skip-permissions)"
+  else
+    echo "    Mode      : interactive (prompts before each action)"
+  fi
+
+  echo ""
+  echo "  How to start:"
+  echo "    • Double-click ~/Applications/${ASSISTANT_NAME}.app"
+  echo "    • Or: cd \"$WORKSPACE_DIR\" && ./start.sh"
+  echo ""
+
+  echo -n "  Launch your assistant now? (y/N): "
+  read -r launch_now
+  if [[ "$launch_now" == "y" || "$launch_now" == "Y" ]]; then
+    echo ""
+    echo "  Starting ${ASSISTANT_NAME}..."
+    cd "$WORKSPACE_DIR" || exit 1
+    local skip_flag=""
+    [[ "$SKIP_PERMISSIONS" == true ]] && skip_flag="--dangerously-skip-permissions"
+    # shellcheck disable=SC2086
+    exec claude $skip_flag
+  else
+    echo ""
+    echo "  All done! Run ./start.sh in your workspace whenever you're ready."
+  fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════════════════════════
+
+main() {
+  phase_preflight
+  phase_system_deps
+  phase_plugins
+  phase_gstack
+  phase_whisper
+  phase_voice
+  phase_scaffolding
+  phase_discord
+  phase_launcher
+  phase_summary
+}
+
+main "$@"

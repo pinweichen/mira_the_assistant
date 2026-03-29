@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Google_Calendar__gcal_list_events",
+      "mcp__claude_ai_Google_Calendar__gcal_create_event",
+      "mcp__claude_ai_Google_Calendar__gcal_get_event",
+      "mcp__claude_ai_Google_Calendar__gcal_update_event",
+      "mcp__claude_ai_Google_Calendar__gcal_delete_event",
+      "mcp__claude_ai_Google_Calendar__gcal_find_meeting_times",
+      "mcp__claude_ai_Google_Calendar__gcal_find_my_free_time",
+      "mcp__claude_ai_Google_Calendar__gcal_respond_to_event",
+      "mcp__claude_ai_Google_Calendar__gcal_list_calendars",
+      "mcp__plugin_discord_discord__fetch_messages",
+      "mcp__plugin_discord_discord__reply",
+      "mcp__plugin_discord_discord__edit_message",
+      "mcp__plugin_discord_discord__react",
+      "mcp__plugin_discord_discord__download_attachment",
+      "Bash(whisper-cli:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(say:*)",
+      "Bash(afplay:*)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(chmod:*)"
+    ]
+  }
+}

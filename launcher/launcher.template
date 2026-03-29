@@ -1,0 +1,5 @@
+#!/bin/bash
+# Launcher for {{ASSISTANT_NAME}} Assistant
+# Opens Terminal and starts the Claude Code EA session
+
+open -a Terminal "{{WORKSPACE_DIR}}/start.sh"
