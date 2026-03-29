@@ -127,7 +127,11 @@ phase_preflight() {
     read -r yn
     if [[ "$yn" != "n" && "$yn" != "N" ]]; then
       curl -fsSL https://claude.ai/install.sh | bash
-      # Source shell profile to pick up new PATH entry
+      # Add common install locations to PATH for this session
+      export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+      # Source shell profiles to pick up any other PATH entries
+      [[ -f "$HOME/.bash_profile" ]] && source "$HOME/.bash_profile" 2>/dev/null
+      [[ -f "$HOME/.bashrc" ]] && source "$HOME/.bashrc" 2>/dev/null
       [[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile" 2>/dev/null
       [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc" 2>/dev/null
       if ! command -v claude &>/dev/null; then
