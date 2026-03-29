@@ -13,16 +13,13 @@
 <br />
 <div align="center">
   <a href="https://github.com/pinweichen/mira_the_assistant">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
+    <img src="images/Mira.png" alt="Logo" width="80" height="80">
   </a>
 
   <h3 align="center">Mira Assistant Setup</h3>
 
   <p align="center">
     One-command installer that sets up a Claude Code Executive Assistant with voice, Discord, and Google Calendar integration.
-    <br />
-    <a href="https://github.com/pinweichen/mira_the_assistant"><strong>Explore the docs »</strong></a>
-    <br />
     <br />
     <a href="https://github.com/pinweichen/mira_the_assistant/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     &middot;
