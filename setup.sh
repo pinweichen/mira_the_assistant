@@ -738,6 +738,27 @@ phase_discord() {
   read -r setup_discord
 
   if [[ "$setup_discord" == "y" || "$setup_discord" == "Y" ]]; then
+    echo ""
+    echo "  ┌─────────────────────────────────────────────────────────────┐"
+    echo "  │  HOW TO CREATE A DISCORD BOT & GET YOUR TOKEN              │"
+    echo "  ├─────────────────────────────────────────────────────────────┤"
+    echo "  │                                                             │"
+    echo "  │  1. Go to https://discord.com/developers/applications       │"
+    echo "  │  2. Click 'New Application' → name it (e.g. '${ASSISTANT_NAME}')      │"
+    echo "  │  3. Go to the 'Bot' tab on the left sidebar                 │"
+    echo "  │  4. Click 'Reset Token' → copy the token (save it!)        │"
+    echo "  │  5. Under 'Privileged Gateway Intents', enable:             │"
+    echo "  │       ✓ Message Content Intent                              │"
+    echo "  │  6. Go to 'OAuth2' → 'URL Generator'                       │"
+    echo "  │       Scopes: bot                                           │"
+    echo "  │       Permissions: Read Messages/View Channels,             │"
+    echo "  │                    Send Messages, Attach Files,             │"
+    echo "  │                    Read Message History                      │"
+    echo "  │  7. Copy the generated URL → open in browser → invite bot   │"
+    echo "  │     to your server                                          │"
+    echo "  │                                                             │"
+    echo "  └─────────────────────────────────────────────────────────────┘"
+    echo ""
     echo -n "  Enter your Discord bot token (input hidden): "
     read -rs bot_token
     echo ""
@@ -748,14 +769,13 @@ phase_discord() {
       chmod 600 "$HOME/.claude/channels/discord/.env"
       info "Discord bot token saved"
       echo ""
-      echo "  Next steps to connect your bot:"
-      echo "  1. Go to https://discord.com/developers/applications"
-      echo "  2. Select your bot application"
-      echo "  3. Under OAuth2 → URL Generator, select these scopes + permissions:"
-      echo "       Scopes: bot"
-      echo "       Permissions: Read Messages/View Channels, Send Messages,"
-      echo "                    Attach Files, Read Message History"
-      echo "  4. Copy the generated URL and open it in your browser to invite the bot"
+      echo "  After launching your assistant, pair Discord by running"
+      echo "  this command in the Claude Code session:"
+      echo ""
+      echo "    /discord:access"
+      echo ""
+      echo "  Then DM your bot on Discord — it will ask you to approve"
+      echo "  the pairing in your terminal."
     else
       warn "No token entered — skipping Discord setup"
     fi
@@ -855,19 +875,11 @@ PLIST_EOF
       -e "s|{{SKIP_PERMISSIONS_FLAG}}|${skip_flag}|g" \
       "$launcher_tpl" > "$launcher_dst"
   else
-    # Write launcher inline — opens Terminal at the workspace and runs claude
+    # Write launcher inline — opens Terminal at the workspace and runs start.sh
     cat > "$launcher_dst" << LAUNCHER_EOF
-#!/bin/bash
+#!/bin/zsh
 # ${ASSISTANT_NAME} Assistant — macOS App Launcher
-WORKSPACE="${WORKSPACE_DIR}"
-CLAUDE_CMD=\$(command -v claude 2>/dev/null || echo "/usr/local/bin/claude")
-
-osascript << OSASCRIPT
-tell application "Terminal"
-  activate
-  do script "cd '\${WORKSPACE}' && '\${CLAUDE_CMD}' --channels plugin:discord@claude-plugins-official ${skip_flag}"
-end tell
-OSASCRIPT
+open -a Terminal "${WORKSPACE_DIR}/start.sh"
 LAUNCHER_EOF
   fi
   chmod +x "$launcher_dst"
@@ -877,9 +889,14 @@ LAUNCHER_EOF
   local start_sh="${WORKSPACE_DIR}/start.sh"
   if [[ ! -f "$start_sh" ]]; then
     cat > "$start_sh" << STARTSH_EOF
-#!/bin/bash
+#!/bin/zsh
 # Start ${ASSISTANT_NAME} Assistant
 # Usage: ./start.sh
+
+# Ensure claude is on PATH (common install locations)
+export PATH="\$HOME/.local/bin:\$HOME/.npm-global/bin:/usr/local/bin:\$PATH"
+[[ -f /opt/homebrew/bin/brew ]] && eval "\$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null
+
 cd "${WORKSPACE_DIR}"
 exec claude --channels plugin:discord@claude-plugins-official ${skip_flag}
 STARTSH_EOF

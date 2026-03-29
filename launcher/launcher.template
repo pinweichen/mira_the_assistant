@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 # Launcher for {{ASSISTANT_NAME}} Assistant
 # Opens Terminal and starts the Claude Code EA session
 
