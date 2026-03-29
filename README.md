@@ -1,15 +1,3 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
-<a id="readme-top"></a>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
-
-
-
 <!-- PROJECT SHIELDS -->
 <!--
 *** I'm using markdown "reference style" links for readability.
@@ -207,18 +195,6 @@ Distributed under the CC BY-NC-SA 4.0 License. See `LICENSE.txt` for more inform
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-
-<!-- CONTACT -->
-## Contact
-
-Pin-Wei Chen
-
-Project Link: [https://github.com/pinweichen/mira_the_assistant](https://github.com/pinweichen/mira_the_assistant)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
@@ -227,21 +203,3 @@ Project Link: [https://github.com/pinweichen/mira_the_assistant](https://github.
 * [Best-README-Template](https://github.com/othneildrew/Best-README-Template) — README template
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[contributors-url]: https://github.com/pinweichen/mira_the_assistant/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[forks-url]: https://github.com/pinweichen/mira_the_assistant/network/members
-[stars-shield]: https://img.shields.io/github/stars/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[stars-url]: https://github.com/pinweichen/mira_the_assistant/stargazers
-[issues-shield]: https://img.shields.io/github/issues/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[issues-url]: https://github.com/pinweichen/mira_the_assistant/issues
-[license-shield]: https://img.shields.io/github/license/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[license-url]: https://github.com/pinweichen/mira_the_assistant/blob/master/LICENSE.txt
-[product-screenshot]: images/screenshot.png
-[claudecode-url]: https://claude.ai/code
-[whispercpp-url]: https://github.com/ggerganov/whisper.cpp
