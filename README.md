@@ -21,9 +21,6 @@
   <p align="center">
     One-command installer that sets up a Claude Code Executive Assistant with voice, Discord, and Google Calendar integration.
     <br />
-    <a href="https://github.com/pinweichen/mira_the_assistant"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
     <a href="https://github.com/pinweichen/mira_the_assistant/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     &middot;
     <a href="https://github.com/pinweichen/mira_the_assistant/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
