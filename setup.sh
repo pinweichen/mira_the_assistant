@@ -45,6 +45,46 @@ VOICE_ENGINE=""    # say | vibevoice | none
 VOICE_NAME=""
 SKIP_PERMISSIONS=false
 
+# ─── Resume state ────────────────────────────────────────────────────────────
+# Tracks completed phases so re-runs skip finished work.
+# Stored at ~/.mira-assistant-setup-state (before we know WORKSPACE_DIR).
+
+STATE_FILE="$HOME/.mira-assistant-setup-state"
+
+_phase_done() {
+  grep -qx "$1" "$STATE_FILE" 2>/dev/null
+}
+
+_mark_done() {
+  echo "$1" >> "$STATE_FILE"
+}
+
+# Save user inputs so re-runs don't re-prompt
+_save_inputs() {
+  cat > "${STATE_FILE}.vars" << VARS_EOF
+ASSISTANT_NAME=$(printf '%q' "$ASSISTANT_NAME")
+USER_NAME=$(printf '%q' "$USER_NAME")
+USER_ROLE=$(printf '%q' "$USER_ROLE")
+PROJECT_COUNT=$(printf '%q' "$PROJECT_COUNT")
+WORK_HOURS=$(printf '%q' "$WORK_HOURS")
+TIMEZONE=$(printf '%q' "$TIMEZONE")
+WORK_EMAIL=$(printf '%q' "$WORK_EMAIL")
+GOOGLE_MEET=$(printf '%q' "$GOOGLE_MEET")
+WORKSPACE_DIR=$(printf '%q' "$WORKSPACE_DIR")
+VOICE_ENGINE=$(printf '%q' "$VOICE_ENGINE")
+VOICE_NAME=$(printf '%q' "$VOICE_NAME")
+SKIP_PERMISSIONS=$SKIP_PERMISSIONS
+VARS_EOF
+}
+
+_load_inputs() {
+  if [[ -f "${STATE_FILE}.vars" ]]; then
+    source "${STATE_FILE}.vars"
+    return 0
+  fi
+  return 1
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Phase 0: Preflight
 # ══════════════════════════════════════════════════════════════════════════════
@@ -68,6 +108,9 @@ phase_preflight() {
       elif [[ -f /usr/local/bin/brew ]]; then
         eval "$(/usr/local/bin/brew shellenv)"
       fi
+      # Re-source shell profile so existing PATH entries (e.g. ~/.local/bin) are preserved
+      [[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile" 2>/dev/null
+      [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc" 2>/dev/null
       if ! command -v brew &>/dev/null; then
         echo "Error: Homebrew install failed. Install manually: https://brew.sh" >&2
         exit 1
@@ -78,11 +121,24 @@ phase_preflight() {
     fi
   fi
 
-  # Verify claude CLI
+  # Verify claude CLI (offer to install if missing)
   if ! command -v claude &>/dev/null; then
-    echo "Error: Claude Code CLI not found on PATH." >&2
-    echo "  Install it: https://docs.anthropic.com/en/docs/claude-code" >&2
-    exit 1
+    echo "Claude Code CLI not found. Install it? (Y/n)"
+    read -r yn
+    if [[ "$yn" != "n" && "$yn" != "N" ]]; then
+      curl -fsSL https://claude.ai/install.sh | bash
+      # Source shell profile to pick up new PATH entry
+      [[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile" 2>/dev/null
+      [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc" 2>/dev/null
+      if ! command -v claude &>/dev/null; then
+        echo "Error: Claude Code install failed." >&2
+        echo "  Install manually: https://claude.ai/code" >&2
+        exit 1
+      fi
+    else
+      echo "Error: Claude Code CLI is required." >&2
+      exit 1
+    fi
   fi
 
   # Verify git
@@ -99,6 +155,15 @@ phase_preflight() {
 ╚══════════════════════════════════════════╝
 BANNER
   echo ""
+
+  # Detect resume
+  if [[ -f "$STATE_FILE" ]]; then
+    local completed
+    completed=$(wc -l < "$STATE_FILE" | tr -d ' ')
+    warn "Resuming previous install ($completed/9 phases completed — finished phases will be skipped)"
+    echo ""
+  fi
+
   echo "This will install:"
   echo "  • System dependencies (whisper-cpp, ffmpeg, node, bun, jq)"
   echo "  • Claude Code plugins (discord, remember, claude-md-management,"
@@ -122,6 +187,10 @@ BANNER
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_system_deps() {
+  if _phase_done "system_deps"; then
+    section "[1/9] System dependencies — already done, skipping"
+    return
+  fi
   section "[1/9] Installing system dependencies..."
   local pkgs=(whisper-cpp ffmpeg node bun jq)
   for pkg in "${pkgs[@]}"; do
@@ -136,6 +205,7 @@ phase_system_deps() {
       fi
     fi
   done
+  _mark_done "system_deps"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -143,6 +213,10 @@ phase_system_deps() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_plugins() {
+  if _phase_done "plugins"; then
+    section "[2/9] Claude Code plugins — already done, skipping"
+    return
+  fi
   section "[2/9] Installing Claude Code plugins..."
   local plugins=(discord remember claude-md-management hookify superpowers gws)
 
@@ -170,6 +244,7 @@ phase_plugins() {
       echo "  Install manually: claude plugin add $plugin"
     fi
   done
+  _mark_done "plugins"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -177,6 +252,10 @@ phase_plugins() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_gstack() {
+  if _phase_done "gstack"; then
+    section "[3/9] gstack skills — already done, skipping"
+    return
+  fi
   section "[3/9] Installing gstack skills..."
   local gstack_dir="$HOME/.claude/skills/gstack"
 
@@ -199,6 +278,7 @@ phase_gstack() {
       echo ""
     fi
   fi
+  _mark_done "gstack"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -206,6 +286,10 @@ phase_gstack() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_whisper() {
+  if _phase_done "whisper"; then
+    section "[4/9] Whisper model — already done, skipping"
+    return
+  fi
   section "[4/9] Setting up Whisper speech-to-text model..."
   local model_dir="$HOME/.local/share/whisper-cpp/models"
   local model_file="$model_dir/ggml-base.en.bin"
@@ -263,6 +347,7 @@ phase_whisper() {
     echo "    curl -fL -o ~/.local/share/whisper-cpp/models/ggml-base.en.bin \\"
     echo "      $model_url"
   fi
+  _mark_done "whisper"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -270,6 +355,11 @@ phase_whisper() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_voice() {
+  if _phase_done "voice"; then
+    section "[5/9] Voice setup — already done, skipping"
+    _load_inputs  # restore VOICE_ENGINE/VOICE_NAME for later phases
+    return
+  fi
   section "[5/9] Voice setup..."
   echo ""
   echo "  Choose a voice for your assistant's replies:"
@@ -311,6 +401,8 @@ phase_voice() {
       VOICE_NAME="none"
       ;;
   esac
+  _save_inputs
+  _mark_done "voice"
 }
 
 # Install/verify a macOS say voice and optionally preview it
@@ -400,57 +492,90 @@ _setup_vibevoice() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_scaffolding() {
+  if _phase_done "scaffolding"; then
+    section "[6/9] Workspace scaffolding — already done, skipping"
+    _load_inputs  # restore all vars for later phases
+    return
+  fi
   section "[6/9] Setting up your assistant workspace..."
   echo ""
 
-  # ── Gather inputs ────────────────────────────────────────────────────────────
+  # ── Gather inputs (restore saved values as defaults if resuming) ─────────────
 
-  echo -n "  Assistant name [Mira]: "
+  local saved_inputs=false
+  if _load_inputs && [[ -n "$ASSISTANT_NAME" ]]; then
+    saved_inputs=true
+    echo "  Found saved inputs from previous run."
+    echo "  Press Enter to keep each value, or type a new one."
+    echo ""
+  fi
+
+  local default_name="${ASSISTANT_NAME:-Mira}"
+  echo -n "  Assistant name [$default_name]: "
   read -r input
-  ASSISTANT_NAME="${input:-Mira}"
+  ASSISTANT_NAME="${input:-$default_name}"
 
-  local default_workspace="$HOME/${ASSISTANT_NAME}_Assistant"
+  local default_workspace="${WORKSPACE_DIR:-$HOME/${ASSISTANT_NAME}_Assistant}"
   echo -n "  Workspace directory [$default_workspace]: "
   read -r input
   WORKSPACE_DIR="${input:-$default_workspace}"
   WORKSPACE_DIR="${WORKSPACE_DIR/#\~/$HOME}"  # expand leading ~
 
+  local default_user="${USER_NAME:-}"
   while true; do
-    echo -n "  Your first name (required): "
+    if [[ -n "$default_user" ]]; then
+      echo -n "  Your first name [$default_user]: "
+    else
+      echo -n "  Your first name (required): "
+    fi
     read -r input
-    USER_NAME="${input:-}"
+    USER_NAME="${input:-$default_user}"
     [[ -n "$USER_NAME" ]] && break
     warn "Name is required — please enter your name."
   done
 
-  echo -n "  Your role [professional]: "
+  local default_role="${USER_ROLE:-professional}"
+  echo -n "  Your role [$default_role]: "
   read -r input
-  USER_ROLE="${input:-professional}"
+  USER_ROLE="${input:-$default_role}"
 
-  echo -n "  Concurrent projects to track [5]: "
+  local default_count="${PROJECT_COUNT:-5}"
+  echo -n "  Concurrent projects to track [$default_count]: "
   read -r input
-  PROJECT_COUNT="${input:-5}"
+  PROJECT_COUNT="${input:-$default_count}"
 
-  echo -n "  Working hours [9am - 6pm ET]: "
+  local default_hours="${WORK_HOURS:-9am - 6pm ET}"
+  echo -n "  Working hours [$default_hours]: "
   read -r input
-  WORK_HOURS="${input:-9am - 6pm ET}"
+  WORK_HOURS="${input:-$default_hours}"
 
-  echo -n "  Timezone [America/New_York]: "
+  local default_tz="${TIMEZONE:-America/New_York}"
+  echo -n "  Timezone [$default_tz]: "
   read -r input
-  TIMEZONE="${input:-America/New_York}"
+  TIMEZONE="${input:-$default_tz}"
 
+  local default_email="${WORK_EMAIL:-}"
   while true; do
-    echo -n "  Work email (required): "
+    if [[ -n "$default_email" ]]; then
+      echo -n "  Work email [$default_email]: "
+    else
+      echo -n "  Work email (required): "
+    fi
     read -r input
-    WORK_EMAIL="${input:-}"
+    WORK_EMAIL="${input:-$default_email}"
     [[ -n "$WORK_EMAIL" ]] && break
     warn "Work email is required."
   done
 
+  local default_meet="${GOOGLE_MEET:-no}"
   echo -n "  Auto-add Google Meet links to meetings? (y/N): "
   read -r input
-  GOOGLE_MEET="no"
-  [[ "$input" == "y" || "$input" == "Y" ]] && GOOGLE_MEET="yes"
+  if [[ -n "$input" ]]; then
+    GOOGLE_MEET="no"
+    [[ "$input" == "y" || "$input" == "Y" ]] && GOOGLE_MEET="yes"
+  else
+    GOOGLE_MEET="$default_meet"
+  fi
 
   echo ""
 
@@ -571,6 +696,8 @@ phase_scaffolding() {
     info "Created settings.local.json (curated day-1 permissions)"
   fi
 
+  _save_inputs
+  _mark_done "scaffolding"
   info "Workspace ready at $WORKSPACE_DIR"
 }
 
@@ -579,6 +706,10 @@ phase_scaffolding() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_discord() {
+  if _phase_done "discord"; then
+    section "[7/9] Discord setup — already done, skipping"
+    return
+  fi
   section "[7/9] Discord setup..."
   echo -n "  Set up Discord messaging? (y/N): "
   read -r setup_discord
@@ -608,6 +739,7 @@ phase_discord() {
   else
     info "Skipped Discord setup"
   fi
+  _mark_done "discord"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -615,6 +747,11 @@ phase_discord() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_launcher() {
+  if _phase_done "launcher"; then
+    section "[8/9] Launcher app — already done, skipping"
+    _load_inputs  # restore SKIP_PERMISSIONS and ASSISTANT_NAME for summary
+    return
+  fi
   section "[8/9] Creating macOS launcher app..."
 
   # ── Consent prompt for --dangerously-skip-permissions ────────────────────────
@@ -727,6 +864,8 @@ STARTSH_EOF
     info "Created start.sh"
   fi
 
+  _save_inputs
+  _mark_done "launcher"
   info "Launcher app: ~/Applications/${ASSISTANT_NAME}.app"
   info "Drag it to the Dock for quick access"
 }
@@ -736,6 +875,8 @@ STARTSH_EOF
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_summary() {
+  # Ensure all variables are loaded (needed when earlier phases were skipped)
+  [[ -z "$ASSISTANT_NAME" ]] && _load_inputs
   section "[9/9] Setup complete!"
   echo ""
   echo "  ┌─────────────────────────────────────────────┐"
@@ -769,6 +910,9 @@ phase_summary() {
   echo "    • Double-click ~/Applications/${ASSISTANT_NAME}.app"
   echo "    • Or: cd \"$WORKSPACE_DIR\" && ./start.sh"
   echo ""
+
+  # Clean up state files — setup completed successfully
+  rm -f "$STATE_FILE" "${STATE_FILE}.vars"
 
   echo -n "  Launch your assistant now? (y/N): "
   read -r launch_now
