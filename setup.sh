@@ -7,6 +7,12 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ─── Ensure common install locations are on PATH ─────────────────────────────
+# Claude Code installs to ~/.local/bin which may not be in PATH for bash sessions
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+# Also pick up Homebrew on Apple Silicon
+[[ -f /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null
+
 # ─── Color helpers ─────────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'
@@ -196,12 +202,25 @@ phase_system_deps() {
     return
   fi
   section "[1/9] Installing system dependencies..."
+
+  # Prevent brew from auto-updating on every install (saves minutes)
+  export HOMEBREW_NO_AUTO_UPDATE=1
+
+  # Warn about slow source builds on older macOS
+  local macos_ver
+  macos_ver=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+  if [[ -n "$macos_ver" && "$macos_ver" -lt 14 ]]; then
+    warn "macOS $macos_ver detected — Homebrew may compile some packages from source."
+    echo "  This can take 15-30 minutes (especially cmake). Please be patient."
+    echo ""
+  fi
+
   local pkgs=(whisper-cpp ffmpeg node bun jq)
   for pkg in "${pkgs[@]}"; do
     if brew list "$pkg" &>/dev/null; then
       info "$pkg (already installed)"
     else
-      echo "  Installing $pkg..."
+      echo "  Installing $pkg... (this may take a while)"
       if brew install "$pkg" 2>&1; then
         info "$pkg installed"
       else
