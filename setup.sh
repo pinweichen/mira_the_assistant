@@ -929,6 +929,7 @@ phase_scaffolding() {
   _apply_template "$T/email-followup.md"  "$WORKSPACE_DIR/templates/email-followup.md"
   _apply_template "$T/meeting-notes.md"   "$WORKSPACE_DIR/templates/meeting-notes.md"
   _apply_template "$T/status-update.md"   "$WORKSPACE_DIR/templates/status-update.md"
+  _apply_template "$T/reminders.md"       "$WORKSPACE_DIR/projects/reminders.md"
   _apply_template "$T/transcribe.sh"      "$WORKSPACE_DIR/tools/transcribe.sh"
   chmod +x "$WORKSPACE_DIR/tools/transcribe.sh" 2>/dev/null || true
 

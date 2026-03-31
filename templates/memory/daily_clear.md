@@ -1,17 +1,13 @@
 ---
-name: Daily Context Clear
-description: 4 AM cron job clears context; assistant recreates state each session from memory + task board
-type: reference
+name: Daily Context Clear & Dream Schedule
+description: 4 AM daily cron clears context window. Dream memory consolidation runs at session exit (not a 24-hour timer).
+type: feedback
 ---
 
-A cron job at 4 AM clears the Claude Code conversation context daily.
+Clear the context window every day at 4 AM so each day starts fresh.
 
-**Why:** Prevents stale context from accumulating. Each session starts fresh with only what's needed.
+**Why:** Keeps sessions clean and avoids stale context accumulating overnight.
 
-**How to apply:** Don't rely on conversation history persisting across days. At session start:
-1. Load hippocampus.md (keyword index)
-2. Check task board (projects/tasks.md)
-3. Check calendar for today
-4. Surface top priorities
+**How to apply:** At session start, create a recurring cron job: `cron: "3 4 * * *"`, `prompt: "/clear"`, `recurring: true`. Since cron jobs are session-only, this must be recreated each time the assistant starts.
 
-All persistent knowledge lives in memory files and the task board, not conversation context.
+*(Dream trigger preference lives in `feedback_dream_trigger.md`)*
