@@ -1,215 +1,179 @@
-<a id="readme-top"></a>
+```
+███╗   ███╗██╗██████╗  █████╗
+████╗ ████║██║██╔══██╗██╔══██╗
+██╔████╔██║██║██████╔╝███████║
+██║╚██╔╝██║██║██╔══██╗██╔══██║
+██║ ╚═╝ ██║██║██║  ██║██║  ██║
+╚═╝     ╚═╝╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
+```
 
-<!-- PROJECT SHIELDS -->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![CC BY-NC-SA 4.0][license-shield]][license-url]
+One-command installer for a Claude Code Executive Assistant with voice, Discord, and Google Calendar.
 
+---
 
+## What You Get
 
-<!-- PROJECT LOGO -->
-<br />
-<div align="center">
-  <a href="https://github.com/pinweichen/mira_the_assistant">
-    <img src="images/Mira.png" alt="Logo" width="80" height="80">
-  </a>
+- AI executive assistant running as a Claude Code session
+- Voice transcription (speech-to-text via whisper-cpp)
+- Voice replies (text-to-speech via macOS `say` or VibeVoice neural TTS)
+- Discord messaging integration
+- Google Calendar and email access
+- Task management, project tracking, and meeting scheduling
+- macOS launcher app (double-click to start)
 
-  <h3 align="center">Mira Assistant Setup</h3>
+---
 
-  <p align="center">
-    One-command installer that sets up a Claude Code Executive Assistant with voice, Discord, and Google Calendar integration.
-    <br />
-    <a href="https://github.com/pinweichen/mira_the_assistant/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
-    &middot;
-    <a href="https://github.com/pinweichen/mira_the_assistant/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
-  </p>
-</div>
+## Prerequisites
 
+- macOS (Apple Silicon or Intel)
+- [Claude Code CLI](https://claude.ai/code) installed and authenticated (requires Pro, Max, or Team subscription)
+- Terminal.app
+- ~500MB free disk space (whisper model + optional voice downloads)
+- Google Workspace access requires a Google account and `gws auth login`
 
+---
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
+## Quick Start
 
+```bash
+git clone https://github.com/USER/mira-assistant-setup.git
+cd mira-assistant-setup
+./setup.sh
+```
 
+The installer walks you through 9 phases, prompting for your name, role, timezone, and preferences. Most steps are automatic.
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+---
 
-Mira Assistant Setup is a one-command installer that configures a personalized AI executive assistant running as a Claude Code session. Run `./setup.sh`, answer a few prompts, and you have a fully operational AI assistant tailored to your name, role, timezone, and preferences.
+## What Gets Installed
 
-Features include:
+| Component | Location | Approx. Size |
+|---|---|---|
+| System deps (whisper-cpp, ffmpeg, node, bun, jq) | via Homebrew | ~200MB |
+| Claude plugins (discord, remember, claude-md-management, hookify, superpowers) | `~/.claude/plugins/` | ~20MB |
+| gstack skills | `~/.claude/skills/gstack/` | ~5MB |
+| Whisper model (ggml-base.en.bin) | `~/.local/share/whisper-cpp/models/` | ~150MB |
+| Voice — standard (macOS say) | built-in | 0 |
+| Voice — premium (VibeVoice, optional) | `~/.local/share/vibevoice/` | ~2.5GB |
+| Workspace | `~/{AssistantName}_Assistant/` | ~1MB |
+| Launcher app | `~/Applications/{AssistantName}.app` | ~1MB |
 
-* **Voice transcription** — speech-to-text via whisper-cpp (speak to your assistant instead of typing)
-* **Voice replies** — text-to-speech via macOS `say` (zero install) or VibeVoice neural TTS (optional premium, 2.5GB model)
-* **Discord messaging integration** — send and receive messages through your assistant via Discord
-* **Google Calendar and email access** — via gws plugin for scheduling, event creation, and email
-* **Task management and project tracking** — structured workspace with tasks and tracker files
-* **macOS launcher app** — double-click a generated `.app` in `~/Applications` to start your session
-* **Fully customizable personality and permissions** — edit `CLAUDE.md` to change how your assistant behaves
+---
 
-The installer runs through 9 phases (preflight, system dependencies, Claude plugins, gstack skills, whisper/STT, voice setup, project scaffolding, Discord setup, and launcher creation), checking before acting so it is safe to run multiple times.
+## Setup Prompts
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+The installer asks for the following information. All prompts have defaults you can accept by pressing Enter.
 
+| Variable | Prompt | Default |
+|---|---|---|
+| `ASSISTANT_NAME` | What should your assistant be called? | `Mira` |
+| `USER_NAME` | Your name | (required) |
+| `USER_ROLE` | Your role or title | `professional` |
+| `PROJECT_COUNT` | Concurrent projects to track | `5` |
+| `WORK_HOURS` | Working hours | `9am - 6pm ET` |
+| `TIMEZONE` | Your timezone | `America/New_York` |
+| `WORK_EMAIL` | Your work email address | (required) |
+| `GOOGLE_MEET` | Auto-add Google Meet to meetings? | `no` |
+| `VOICE_NAME` | Voice selection (see Voice Options below) | `Allison (Enhanced)` |
 
+---
 
-### Built With
+## Voice Options
 
-* Bash
-* [Claude Code][claudecode-url]
-* [whisper-cpp][whispercpp-url]
-* Homebrew
-* Node.js
-* Bun
+Voice is configured in an interactive menu during setup.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+**1. Standard (macOS say) — recommended for most users**
 
+Zero additional installation. Uses voices already on your Mac. Seven voice choices including Samantha, Alex, and others. Good quality, instant response.
 
+To add more voices: System Settings > Accessibility > Spoken Content > System Voice > Manage Voices.
 
-<!-- GETTING STARTED -->
-## Getting Started
+**2. Premium (VibeVoice) — optional**
 
-### Prerequisites
+Neural TTS with excellent quality. Requires Python 3.10+ and a 2.5GB model download. Runs locally on your machine. The installer handles setup if you choose this option.
 
-* macOS (Apple Silicon or Intel)
-* [Claude Code CLI](https://claude.ai/code) installed and authenticated
-* ~500MB free disk space
+**3. Skip — text-only replies**
 
-### Installation
+No voice output. The assistant operates entirely via text in the Claude Code session.
 
-1. Clone the repo
-   ```sh
-   git clone https://github.com/pinweichen/mira_the_assistant.git
-   cd mira_the_assistant
-   ```
-2. Run the installer
-   ```sh
-   ./setup.sh
-   ```
-3. Follow the prompts — the installer will ask for your name, role, timezone, preferred voice, and optional Discord bot token. It handles all dependency installation automatically via Homebrew.
+---
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## Google Workspace (Calendar, Gmail, Drive)
 
+- Uses the [gws plugin](https://github.com/WadeWarren/gws-claude-plugin) + [gws CLI](https://github.com/googleworkspace/cli)
+- The installer adds the gws plugin marketplace, installs the plugin, and installs the gws CLI via npm
+- During setup, you'll run `gws auth setup` (creates a Google Cloud project + OAuth credentials) and `gws auth login` (browser-based Google sign-in)
+- Supports 92 Google Workspace skills: Calendar, Gmail, Drive, Sheets, Docs, and more
+- Works in CLI `--channels` mode (unlike Claude's built-in Google Calendar MCP which is web-only)
 
+---
 
-<!-- USAGE EXAMPLES -->
-## Usage
+## Discord Setup
 
-After installation, start your assistant in one of two ways:
+Discord integration is optional. To enable it:
 
-* **Double-click** the generated `.app` bundle in `~/Applications`
-* **Run from the terminal:**
-  ```sh
-  ./start.sh
-  ```
+1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) and create a new application
+2. Under Bot, create a bot and copy the token
+3. Required permissions: Read Messages, Send Messages, Attach Files, Read Message History
+4. Invite the bot to your server with those permissions
+5. Paste the bot token when the installer prompts for it
 
-Your assistant reads `CLAUDE.md` in the workspace directory for its personality, permissions, and tool access. Edit that file at any time to customize behavior — change the tone, add new capabilities, restrict what it can do, or update your preferences.
+The token is stored locally at `~/.claude/channels/discord/.env` with `chmod 600` permissions.
 
-To uninstall, run `./uninstall.sh`. The uninstaller prompts before each removal step and never touches system-level packages.
+---
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## Customization
 
+After installation, all configuration files are yours to edit.
 
+- **Personality and responsibilities** — Edit `CLAUDE.md` in your workspace directory. The assistant reads this on startup.
+- **Permissions** — Edit `settings.local.json` in your workspace to adjust which tools and actions the assistant can take.
+- **Templates** — All files in the workspace `templates/` directory can be modified freely.
+- **Voice** — Change the `VOICE_NAME` setting in `CLAUDE.md` or re-run `./setup.sh` to reconfigure.
 
-<!-- ROADMAP -->
-## Roadmap
+---
 
-- [x] macOS installer (setup.sh)
-- [x] Voice setup (macOS say + VibeVoice)
-- [x] Discord integration
-- [x] Google Calendar/email via gws
-- [x] macOS .app launcher
-- [x] Conservative uninstaller
-- [ ] Windows support (setup.ps1)
-- [ ] Linux support
-- [ ] Web-based configuration UI
+## Uninstalling
 
-See the [open issues](https://github.com/pinweichen/mira_the_assistant/issues) for a full list of proposed features and known issues.
+```bash
+./uninstall.sh
+```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+The uninstaller is conservative: it prompts before removing each component and never touches Homebrew packages or Claude plugins that may be shared with other projects. Your workspace files are preserved unless you explicitly confirm their removal.
 
+---
 
+## Troubleshooting
 
-<!-- CONTRIBUTING -->
-## Contributing
+**"claude: command not found"**
+Install the Claude Code CLI from [claude.ai/code](https://claude.ai/code) and make sure it is on your PATH before running setup.
 
-Contributions are what make the open source community such an amazing place. Any contributions you make are **greatly appreciated**.
+**"Homebrew not found"**
+The installer detects this and offers to install Homebrew for you. Accept the prompt or install it manually from [brew.sh](https://brew.sh).
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+**Voice not available in macOS say**
+The voice you selected may not be downloaded yet. Go to System Settings > Accessibility > Spoken Content > System Voice > Manage Voices and download it, then re-run `./setup.sh`.
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+**gstack clone failed**
+The gstack repository may be private. The installer will print manual installation instructions if the clone fails. Follow those steps and then re-run `./setup.sh`.
 
-### Top contributors:
+**Google Workspace not working**
+Run `gws auth status` to check if you're authenticated. If not, run `gws auth login`. If the gws CLI isn't installed, run `npm install -g @googleworkspace/cli`. If `gws auth setup` hasn't been run yet, run it first to create OAuth credentials.
 
-<a href="https://github.com/pinweichen/mira_the_assistant/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=pinweichen/mira_the_assistant" alt="contrib.rocks image" />
-</a>
+**Whisper model download failed**
+The installer retries up to 3 times automatically. If it still fails, check your internet connection and available disk space (~150MB needed), then re-run `./setup.sh`.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+**"claude plugin add" hangs waiting for input**
+Some plugin installs may require interactive confirmation. The installer attempts to pass `--yes` where supported. If it hangs, press Enter or type `y` to confirm.
 
+---
 
+## Idempotent
 
-<!-- LICENSE -->
+Running `./setup.sh` again is safe. Each phase checks whether its work is already done before acting — installed packages are skipped, existing files are not overwritten, plugins already present are left alone. Re-running after a partial install resumes from where it left off.
+
+---
+
 ## License
 
-Distributed under the CC BY-NC-SA 4.0 License. See `LICENSE.txt` for more information.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
-
-* [Claude Code][claudecode-url] — The AI assistant platform
-* [whisper-cpp][whispercpp-url] — Speech-to-text engine
-* [Best-README-Template](https://github.com/othneildrew/Best-README-Template) — README template
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[contributors-url]: https://github.com/pinweichen/mira_the_assistant/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[forks-url]: https://github.com/pinweichen/mira_the_assistant/network/members
-[stars-shield]: https://img.shields.io/github/stars/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[stars-url]: https://github.com/pinweichen/mira_the_assistant/stargazers
-[issues-shield]: https://img.shields.io/github/issues/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[issues-url]: https://github.com/pinweichen/mira_the_assistant/issues
-[license-shield]: https://img.shields.io/github/license/pinweichen/mira_the_assistant.svg?style=for-the-badge
-[license-url]: https://github.com/pinweichen/mira_the_assistant/blob/master/LICENSE.txt
-[product-screenshot]: images/screenshot.png
-[claudecode-url]: https://claude.ai/code
-[whispercpp-url]: https://github.com/ggerganov/whisper.cpp
+MIT

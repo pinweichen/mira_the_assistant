@@ -31,9 +31,11 @@ section() { echo -e "\n${BOLD}${BLUE}$1${NC}"; }
 
 sanitize() {
   local val="$1"
+  val="${val//\\/\\\\}"   # escape backslashes first
   val="${val//&/\\&}"
   val="${val//|/\\|}"
-  echo "$val"
+  val="${val//$'\n'/}"    # strip newlines (prevent sed multi-line injection)
+  printf '%s' "$val"      # printf avoids echo interpreting escape sequences
 }
 
 # ─── Global state (set across phases) ─────────────────────────────────────────
@@ -47,6 +49,7 @@ TIMEZONE=""
 WORK_EMAIL=""
 GOOGLE_MEET=""
 WORKSPACE_DIR=""
+VOICE_LANGUAGE=""   # en | zh | ja | ko | es | fr | de | auto
 VOICE_ENGINE=""    # say | vibevoice | none
 VOICE_NAME=""
 SKIP_PERMISSIONS=false
@@ -63,6 +66,7 @@ _phase_done() {
 
 _mark_done() {
   echo "$1" >> "$STATE_FILE"
+  chmod 600 "$STATE_FILE" 2>/dev/null || true
 }
 
 # Save user inputs so re-runs don't re-prompt
@@ -77,10 +81,12 @@ TIMEZONE=$(printf '%q' "$TIMEZONE")
 WORK_EMAIL=$(printf '%q' "$WORK_EMAIL")
 GOOGLE_MEET=$(printf '%q' "$GOOGLE_MEET")
 WORKSPACE_DIR=$(printf '%q' "$WORKSPACE_DIR")
+VOICE_LANGUAGE=$(printf '%q' "$VOICE_LANGUAGE")
 VOICE_ENGINE=$(printf '%q' "$VOICE_ENGINE")
 VOICE_NAME=$(printf '%q' "$VOICE_NAME")
-SKIP_PERMISSIONS=$SKIP_PERMISSIONS
+SKIP_PERMISSIONS=$(printf '%q' "$SKIP_PERMISSIONS")
 VARS_EOF
+  chmod 600 "${STATE_FILE}.vars"
 }
 
 _load_inputs() {
@@ -228,6 +234,19 @@ phase_system_deps() {
       fi
     fi
   done
+
+  # gws CLI (Google Workspace CLI — required for gws plugin)
+  if command -v gws &>/dev/null; then
+    info "gws CLI (already installed)"
+  else
+    echo "  Installing gws CLI (Google Workspace)..."
+    if npm install -g @googleworkspace/cli 2>&1; then
+      info "gws CLI installed"
+    else
+      warn "Could not install gws CLI"
+      echo "    Install manually: npm install -g @googleworkspace/cli"
+    fi
+  fi
   _mark_done "system_deps"
 }
 
@@ -241,32 +260,57 @@ phase_plugins() {
     return
   fi
   section "[2/9] Installing Claude Code plugins..."
-  local plugins=(discord remember claude-md-management hookify superpowers gws)
+
+  local plugins=(discord remember claude-md-management hookify superpowers)
+
+  local json="$HOME/.claude/plugins/installed_plugins.json"
+  local cache_dir="$HOME/.claude/plugins/cache/claude-plugins-official"
 
   for plugin in "${plugins[@]}"; do
-    # Check install by directory presence
-    if [[ -d "$HOME/.claude/plugins/$plugin" ]]; then
+    # Check if already installed (cache dir or installed_plugins.json)
+    if [[ -d "$cache_dir/$plugin" ]]; then
       info "$plugin (already installed)"
       continue
     fi
-    # Also check installed_plugins.json if it exists
-    local json="$HOME/.claude/plugins/installed_plugins.json"
-    if [[ -f "$json" ]] && grep -q "\"$plugin\"" "$json" 2>/dev/null; then
+    if [[ -f "$json" ]] && grep -q "\"${plugin}@" "$json" 2>/dev/null; then
       info "$plugin (already installed)"
       continue
     fi
 
     echo "  Installing plugin: $plugin..."
-    # Try --yes flag first (non-interactive), fall back without it
-    if claude plugin add "$plugin" --yes 2>/dev/null; then
-      info "$plugin installed"
-    elif claude plugin add "$plugin" 2>/dev/null; then
+    if echo "y" | claude plugin install "$plugin" 2>&1; then
       info "$plugin installed"
     else
       warn "Could not install plugin: $plugin"
-      echo "  Install manually: claude plugin add $plugin"
+      echo "    Install manually: claude plugin install $plugin"
     fi
   done
+
+  # gws plugin (Google Workspace — Calendar, Gmail, Drive, etc.)
+  # Requires its own marketplace, then install
+  local gws_cache="$HOME/.claude/plugins/cache/gws-marketplace"
+  if [[ -d "$gws_cache/gws" ]]; then
+    info "gws (already installed)"
+  elif [[ -f "$json" ]] && grep -q '"gws@' "$json" 2>/dev/null; then
+    info "gws (already installed)"
+  else
+    echo "  Adding gws marketplace..."
+    if claude plugin marketplace add https://github.com/WadeWarren/gws-claude-plugin 2>&1; then
+      info "gws marketplace added"
+    else
+      warn "Could not add gws marketplace"
+    fi
+
+    echo "  Installing plugin: gws..."
+    if echo "y" | claude plugin install gws 2>&1; then
+      info "gws installed"
+    else
+      warn "Could not install gws plugin"
+      echo "    Install manually:"
+      echo "      claude plugin marketplace add https://github.com/WadeWarren/gws-claude-plugin"
+      echo "      claude plugin install gws"
+    fi
+  fi
   _mark_done "plugins"
 }
 
@@ -310,13 +354,22 @@ phase_gstack() {
 
 phase_whisper() {
   if _phase_done "whisper"; then
-    section "[4/9] Whisper model — already done, skipping"
+    section "[5/9] Whisper model — already done, skipping"
     return
   fi
-  section "[4/9] Setting up Whisper speech-to-text model..."
+  section "[5/9] Setting up Whisper speech-to-text model..."
   local model_dir="$HOME/.local/share/whisper-cpp/models"
-  local model_file="$model_dir/ggml-base.en.bin"
-  local model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+
+  # Use English-only model for en, multilingual model for all other languages
+  local model_file model_url
+  if [[ "$VOICE_LANGUAGE" == "en" || -z "$VOICE_LANGUAGE" ]]; then
+    model_file="$model_dir/ggml-base.en.bin"
+    model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+  else
+    model_file="$model_dir/ggml-base.bin"
+    model_url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+    info "Using multilingual Whisper model for language: $VOICE_LANGUAGE"
+  fi
   local min_size=$(( 100 * 1024 * 1024 ))  # 100MB minimum
 
   # Check if already present and valid
@@ -367,8 +420,8 @@ phase_whisper() {
     echo ""
     echo "  Manual download:"
     echo "    mkdir -p ~/.local/share/whisper-cpp/models"
-    echo "    curl -fL -o ~/.local/share/whisper-cpp/models/ggml-base.en.bin \\"
-    echo "      $model_url"
+    echo "    curl -fL -o ${model_file} \\"
+    echo "      ${model_url}"
   fi
   _mark_done "whisper"
 }
@@ -379,49 +432,194 @@ phase_whisper() {
 
 phase_voice() {
   if _phase_done "voice"; then
-    section "[5/9] Voice setup — already done, skipping"
+    section "[4/9] Voice setup — already done, skipping"
     _load_inputs  # restore VOICE_ENGINE/VOICE_NAME for later phases
     return
   fi
-  section "[5/9] Voice setup..."
+  section "[4/9] Voice setup..."
+  echo ""
+  echo "  Choose a language for voice (speech-to-text and text-to-speech):"
+  echo ""
+  echo "    1) English"
+  echo "    2) Chinese (Mandarin)"
+  echo "    3) Japanese"
+  echo "    4) Korean"
+  echo "    5) Spanish"
+  echo "    6) French"
+  echo "    7) German"
+  echo "    8) Auto-detect (slightly slower transcription)"
+  echo ""
+  echo -n "  Select [1-8] (default: 1): "
+  read -r lang_choice
+
+  case "$lang_choice" in
+    1|"") VOICE_LANGUAGE="en" ;;
+    2)    VOICE_LANGUAGE="zh" ;;
+    3)    VOICE_LANGUAGE="ja" ;;
+    4)    VOICE_LANGUAGE="ko" ;;
+    5)    VOICE_LANGUAGE="es" ;;
+    6)    VOICE_LANGUAGE="fr" ;;
+    7)    VOICE_LANGUAGE="de" ;;
+    8)    VOICE_LANGUAGE="auto" ;;
+    *)    VOICE_LANGUAGE="en"; warn "Invalid selection — defaulting to English" ;;
+  esac
+  info "Voice language: $VOICE_LANGUAGE"
+
   echo ""
   echo "  Choose a voice for your assistant's replies:"
   echo ""
-  echo "  Standard voices (macOS say — zero install):"
-  echo "    1) Allison (Enhanced)  — Female"
-  echo "    2) Ava (Premium)       — Female"
-  echo "    3) Samantha (Enhanced) — Female"
-  echo "    4) Zoe (Enhanced)      — Female"
-  echo "    5) Tom (Enhanced)      — Male"
-  echo "    6) Evan (Enhanced)     — Male"
-  echo "    7) Daniel              — Male (built-in)"
-  echo ""
-  echo "  Premium AI voice:"
-  echo "    8) VibeVoice AI        — Premium quality (Python + ~2.5GB download)"
-  echo ""
-  echo "    9) Skip — no voice replies"
-  echo ""
-  echo -n "  Select [1-9]: "
-  read -r voice_choice
 
-  case "$voice_choice" in
-    1) _setup_say_voice "Allison" ;;
-    2) _setup_say_voice "Ava" ;;
-    3) _setup_say_voice "Samantha" ;;
-    4) _setup_say_voice "Zoe" ;;
-    5) _setup_say_voice "Tom" ;;
-    6) _setup_say_voice "Evan" ;;
-    7) _setup_say_voice "Daniel" ;;
-    8) _setup_vibevoice ;;
-    9|"")
-      VOICE_ENGINE="none"
-      VOICE_NAME="none"
-      info "Skipped voice setup"
+  # Show language-appropriate macOS say voices
+  case "$VOICE_LANGUAGE" in
+    zh)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Tingting             — Female (Mandarin)"
+      echo "    2) Meijia               — Female (Mandarin)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    3) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    4) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-4]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Tingting" ;;
+        2) _setup_say_voice "Meijia" ;;
+        3) _setup_vibevoice ;;
+        4|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
       ;;
-    *)
-      warn "Invalid selection — skipping voice setup"
-      VOICE_ENGINE="none"
-      VOICE_NAME="none"
+    ja)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Kyoko               — Female (Japanese)"
+      echo "    2) Otoya               — Male (Japanese)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    3) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    4) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-4]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Kyoko" ;;
+        2) _setup_say_voice "Otoya" ;;
+        3) _setup_vibevoice ;;
+        4|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
+      ;;
+    ko)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Yuna                — Female (Korean)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    2) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    3) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-3]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Yuna" ;;
+        2) _setup_vibevoice ;;
+        3|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
+      ;;
+    es)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Paulina             — Female (Spanish)"
+      echo "    2) Monica              — Female (Spanish)"
+      echo "    3) Juan                — Male (Spanish)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    4) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    5) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-5]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Paulina" ;;
+        2) _setup_say_voice "Monica" ;;
+        3) _setup_say_voice "Juan" ;;
+        4) _setup_vibevoice ;;
+        5|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
+      ;;
+    fr)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Amelie              — Female (French)"
+      echo "    2) Thomas              — Male (French)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    3) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    4) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-4]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Amelie" ;;
+        2) _setup_say_voice "Thomas" ;;
+        3) _setup_vibevoice ;;
+        4|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
+      ;;
+    de)
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Anna                — Female (German)"
+      echo "    2) Markus              — Male (German)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    3) VibeVoice AI         — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    4) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-4]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Anna" ;;
+        2) _setup_say_voice "Markus" ;;
+        3) _setup_vibevoice ;;
+        4|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
+      ;;
+    *) # en or auto — show English voices
+      echo "  Standard voices (macOS say — zero install):"
+      echo "    1) Allison (Enhanced)  — Female"
+      echo "    2) Ava (Premium)       — Female"
+      echo "    3) Samantha (Enhanced) — Female"
+      echo "    4) Zoe (Enhanced)      — Female"
+      echo "    5) Tom (Enhanced)      — Male"
+      echo "    6) Evan (Enhanced)     — Male"
+      echo "    7) Daniel              — Male (built-in)"
+      echo ""
+      echo "  Premium AI voice:"
+      echo "    8) VibeVoice AI        — Premium quality (Python + ~2.5GB download)"
+      echo ""
+      echo "    9) Skip — no voice replies"
+      echo ""
+      echo -n "  Select [1-9]: "
+      read -r voice_choice
+      case "$voice_choice" in
+        1) _setup_say_voice "Allison" ;;
+        2) _setup_say_voice "Ava" ;;
+        3) _setup_say_voice "Samantha" ;;
+        4) _setup_say_voice "Zoe" ;;
+        5) _setup_say_voice "Tom" ;;
+        6) _setup_say_voice "Evan" ;;
+        7) _setup_say_voice "Daniel" ;;
+        8) _setup_vibevoice ;;
+        9|"") VOICE_ENGINE="none"; VOICE_NAME="none"; info "Skipped voice setup" ;;
+        *)     VOICE_ENGINE="none"; VOICE_NAME="none"; warn "Invalid selection — skipping voice setup" ;;
+      esac
       ;;
   esac
   _save_inputs
@@ -538,6 +736,13 @@ phase_scaffolding() {
   read -r input
   ASSISTANT_NAME="${input:-$default_name}"
 
+  # Validate: alphanumeric, spaces, hyphens, underscores only (prevents injection in
+  # plist XML, shell scripts, sed patterns, and filesystem paths)
+  if [[ ! "$ASSISTANT_NAME" =~ ^[a-zA-Z0-9\ _-]+$ ]]; then
+    err "Assistant name must contain only letters, numbers, spaces, hyphens, and underscores."
+    exit 1
+  fi
+
   local default_workspace="${WORKSPACE_DIR:-$HOME/${ASSISTANT_NAME}_Assistant}"
   echo -n "  Workspace directory [$default_workspace]: "
   read -r input
@@ -616,7 +821,15 @@ phase_scaffolding() {
   local s_vengine;       s_vengine="$(sanitize "$VOICE_ENGINE")"
 
   # Transcription command (macOS whisper-cpp)
-  local transcribe_cmd='whisper-cpp --model ~/.local/share/whisper-cpp/models/ggml-base.en.bin --language en --output-txt "$1"'
+  local whisper_model whisper_lang
+  if [[ "$VOICE_LANGUAGE" == "en" || -z "$VOICE_LANGUAGE" ]]; then
+    whisper_model="ggml-base.en.bin"
+    whisper_lang="en"
+  else
+    whisper_model="ggml-base.bin"
+    whisper_lang="$VOICE_LANGUAGE"
+  fi
+  local transcribe_cmd="whisper-cpp --model ~/.local/share/whisper-cpp/models/${whisper_model} --language ${whisper_lang} --output-txt \"\$1\""
   local s_transcribe;    s_transcribe="$(sanitize "$transcribe_cmd")"
 
   # TTS command based on voice engine
@@ -637,12 +850,19 @@ phase_scaffolding() {
     info "Created workspace: $WORKSPACE_DIR"
   fi
 
+  # Determine the Claude projects memory path for this workspace
+  # Claude Code stores per-project memory at ~/.claude/projects/<escaped-path>/memory/
+  local escaped_ws
+  escaped_ws=$(echo "$WORKSPACE_DIR" | sed 's|/|-|g')
+  MEMORY_DIR="$HOME/.claude/projects/${escaped_ws}/memory"
+
   mkdir -p \
     "$WORKSPACE_DIR/projects" \
     "$WORKSPACE_DIR/templates" \
     "$WORKSPACE_DIR/tools" \
     "$WORKSPACE_DIR/.claude" \
-    "$WORKSPACE_DIR/.remember"
+    "$WORKSPACE_DIR/.remember" \
+    "$MEMORY_DIR"
 
   # ── Template substitution helper ─────────────────────────────────────────────
   # Copies src → dst with all {{VAR}} substitutions applied.
@@ -712,6 +932,19 @@ phase_scaffolding() {
   _apply_template "$T/transcribe.sh"      "$WORKSPACE_DIR/tools/transcribe.sh"
   chmod +x "$WORKSPACE_DIR/tools/transcribe.sh" 2>/dev/null || true
 
+  # ── Memory system (hippocampus + topic files) ────────────────────────────────
+  # Memory lives in Claude Code's per-project memory dir, NOT the workspace.
+  # hippocampus.md = keyword index (loaded at session start)
+  # All other files = lazy-loaded on keyword match
+
+  local M="$SCRIPT_DIR/templates/memory"
+  for memfile in "$M"/*.md; do
+    [[ ! -f "$memfile" ]] && continue
+    local fname; fname="$(basename "$memfile")"
+    _apply_template "$memfile" "$MEMORY_DIR/$fname"
+  done
+  info "Memory system initialized ($MEMORY_DIR)"
+
   # ── Copy curated settings.local.json from template ──────────────────────────
   local settings_dst="$WORKSPACE_DIR/.claude/settings.local.json"
   if [[ ! -f "$settings_dst" ]]; then
@@ -765,7 +998,7 @@ phase_discord() {
 
     if [[ -n "$bot_token" ]]; then
       mkdir -p "$HOME/.claude/channels/discord"
-      printf 'DISCORD_TOKEN=%s\n' "$bot_token" > "$HOME/.claude/channels/discord/.env"
+      printf 'DISCORD_TOKEN="%s"\n' "$bot_token" > "$HOME/.claude/channels/discord/.env"
       chmod 600 "$HOME/.claude/channels/discord/.env"
       info "Discord bot token saved"
       echo ""
@@ -783,6 +1016,131 @@ phase_discord() {
     info "Skipped Discord setup"
   fi
   _mark_done "discord"
+}
+
+# ── Google Workspace Authentication (part of Phase 7) ──────────────────────
+
+phase_gws_auth() {
+  if _phase_done "gws_auth"; then
+    return
+  fi
+  echo ""
+  echo -n "  Set up Google Workspace (Calendar, Gmail, Drive)? (y/N): "
+  read -r setup_gws
+
+  if [[ "$setup_gws" == "y" || "$setup_gws" == "Y" ]]; then
+    if ! command -v gws &>/dev/null; then
+      warn "gws CLI not found on PATH — skipping Google Workspace auth"
+      echo "    Install it first: npm install -g @googleworkspace/cli"
+      echo "    Then run: gws auth setup --login"
+      _mark_done "gws_auth"
+      return
+    fi
+
+    # Check if already authenticated
+    if gws auth status 2>/dev/null | grep -q '"token_valid": true'; then
+      info "Google Workspace already authenticated"
+      _mark_done "gws_auth"
+      return
+    fi
+
+    # Check if OAuth credentials already exist (setup already done)
+    local has_client_secret=false
+    if [[ -f "$HOME/.config/gws/client_secret.json" ]]; then
+      has_client_secret=true
+    fi
+
+    if [[ "$has_client_secret" == false ]]; then
+      echo ""
+      echo "  ┌─────────────────────────────────────────────────────────────┐"
+      echo "  │  GOOGLE WORKSPACE — FIRST-TIME SETUP                       │"
+      echo "  ├─────────────────────────────────────────────────────────────┤"
+      echo "  │                                                             │"
+      echo "  │  The gws CLI needs a Google Cloud project with OAuth        │"
+      echo "  │  credentials. There are two ways to set this up:            │"
+      echo "  │                                                             │"
+      echo "  │  Option A: Automatic (requires gcloud CLI)                  │"
+      echo "  │    → 'gws auth setup --login' handles everything            │"
+      echo "  │                                                             │"
+      echo "  │  Option B: Manual (Google Cloud Console)                    │"
+      echo "  │    1. Go to https://console.cloud.google.com                │"
+      echo "  │    2. Create a project (or select existing)                 │"
+      echo "  │    3. Enable APIs: Calendar, Gmail, Drive, Sheets, Docs    │"
+      echo "  │    4. Create OAuth 2.0 credentials (Desktop app type)      │"
+      echo "  │    5. Download the JSON → save as:                         │"
+      echo "  │       ~/.config/gws/client_secret.json                     │"
+      echo "  │    6. Then run: gws auth login                             │"
+      echo "  │                                                             │"
+      echo "  └─────────────────────────────────────────────────────────────┘"
+      echo ""
+
+      if command -v gcloud &>/dev/null; then
+        echo "  gcloud CLI detected — running automatic setup..."
+        echo ""
+        if gws auth setup --login; then
+          info "Google Workspace setup and login complete"
+          _mark_done "gws_auth"
+          return
+        else
+          warn "Automatic setup had issues"
+          echo "    You can retry later: gws auth setup --login"
+          echo "    Or set up manually using Option B above"
+        fi
+      else
+        echo "  gcloud CLI not found — choose an option:"
+        echo ""
+        echo "    (A) Install gcloud first, then run: gws auth setup --login"
+        echo "        brew install --cask google-cloud-sdk"
+        echo ""
+        echo "    (B) Set up manually via Google Cloud Console (see above)"
+        echo "        Then run: gws auth login"
+        echo ""
+        echo -n "  Install gcloud now and run automatic setup? (y/N): "
+        read -r install_gcloud
+
+        if [[ "$install_gcloud" == "y" || "$install_gcloud" == "Y" ]]; then
+          echo "  Installing Google Cloud SDK..."
+          if brew install --cask google-cloud-sdk 2>&1; then
+            # Source gcloud PATH
+            if [[ -f "$(brew --prefix)/share/google-cloud-sdk/path.bash.inc" ]]; then
+              source "$(brew --prefix)/share/google-cloud-sdk/path.bash.inc"
+            fi
+            info "gcloud installed"
+            echo ""
+            echo "  Running gws auth setup --login (this opens a browser)..."
+            if gws auth setup --login; then
+              info "Google Workspace setup and login complete"
+              _mark_done "gws_auth"
+              return
+            else
+              warn "Setup had issues — you can retry later: gws auth setup --login"
+            fi
+          else
+            warn "Could not install gcloud"
+            echo "    Set up manually using Option B above, then run: gws auth login"
+          fi
+        else
+          echo ""
+          echo "  Skipping for now. Set up later using either option above."
+        fi
+      fi
+    else
+      # Client secret exists, just need to login
+      echo ""
+      echo "  OAuth credentials found. Signing in with Google..."
+      echo "  (This will open your browser)"
+      echo ""
+      if gws auth login; then
+        info "Google Workspace authenticated"
+      else
+        warn "Login had issues — you can retry later with: gws auth login"
+      fi
+    fi
+  else
+    info "Skipped Google Workspace setup"
+    echo "    Set up later: gws auth setup --login"
+  fi
+  _mark_done "gws_auth"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -927,6 +1285,7 @@ phase_summary() {
   echo "    Workspace : $WORKSPACE_DIR"
   echo "    Launcher  : ~/Applications/${ASSISTANT_NAME}.app"
 
+  echo "    Language  : ${VOICE_LANGUAGE:-en}"
   case "$VOICE_ENGINE" in
     say)        echo "    Voice     : $VOICE_NAME (macOS say)" ;;
     vibevoice)  echo "    Voice     : VibeVoice AI (speaker: $VOICE_NAME)" ;;
@@ -937,6 +1296,14 @@ phase_summary() {
     echo "    Discord   : configured ✓"
   else
     echo "    Discord   : not configured (re-run setup to add)"
+  fi
+
+  if command -v gws &>/dev/null && gws auth status 2>/dev/null | grep -q '"token_valid": true'; then
+    echo "    Google WS : authenticated ✓"
+  elif command -v gws &>/dev/null; then
+    echo "    Google WS : gws CLI installed, not authenticated (run: gws auth login)"
+  else
+    echo "    Google WS : not installed (run: npm install -g @googleworkspace/cli)"
   fi
 
   if [[ "$SKIP_PERMISSIONS" == true ]]; then
@@ -963,7 +1330,7 @@ phase_summary() {
     local skip_flag=""
     [[ "$SKIP_PERMISSIONS" == true ]] && skip_flag="--dangerously-skip-permissions"
     # shellcheck disable=SC2086
-    exec claude $skip_flag
+    exec claude --channels plugin:discord@claude-plugins-official $skip_flag
   else
     echo ""
     echo "  All done! Run ./start.sh in your workspace whenever you're ready."
@@ -979,10 +1346,11 @@ main() {
   phase_system_deps
   phase_plugins
   phase_gstack
-  phase_whisper
   phase_voice
+  phase_whisper
   phase_scaffolding
   phase_discord
+  phase_gws_auth
   phase_launcher
   phase_summary
 }

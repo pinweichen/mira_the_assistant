@@ -52,7 +52,7 @@ Everything runs locally on your Mac. Your data stays on your machine.
 
 | Feature | Requirement |
 |---|---|
-| Google Calendar access | Claude **Max** or **Team** subscription (gws plugin) |
+| Google Workspace (Calendar, Gmail, Drive) | Google account + `gws auth login` (set up during install) |
 | Discord messaging | A Discord bot token ([create one here](https://discord.com/developers/applications)) |
 | Premium AI voice (VibeVoice) | Python 3.9+, ~2.5GB disk space |
 
@@ -100,7 +100,7 @@ The installer runs 9 phases. Here's what happens at each one and what you need t
 This will install:
   * System dependencies (whisper-cpp, ffmpeg, node, bun, jq)
   * Claude Code plugins (discord, remember, claude-md-management,
-                         hookify, superpowers, gws)
+                         hookify, superpowers)
   * gstack skills
   * Whisper speech-to-text model (~150MB)
   * Voice setup (optional)
@@ -146,7 +146,7 @@ Installs 6 plugins into Claude Code:
 | `claude-md-management` | Manages CLAUDE.md files |
 | `hookify` | Event-driven hooks for automation |
 | `superpowers` | Extended Claude Code capabilities |
-| `gws` | Google Calendar and email access |
+**Note:** Google Workspace access (Calendar, Gmail, Drive) is via the gws plugin + gws CLI. Run `gws auth login` if not already authenticated.
 
 **What to do:** Nothing. Automatic. If a plugin install hangs, press Enter or type `y`.
 
@@ -431,14 +431,19 @@ Mira (voice reply): [audio] "Done! I scheduled your call with Alex
 
 ### Prerequisites
 
-Google Calendar access requires:
-- Claude **Max** or **Team** subscription
-- The **gws** plugin (installed during setup)
-- First-time Google OAuth (Claude prompts you automatically)
+Google Workspace access requires:
+- The gws CLI installed (`npm install -g @googleworkspace/cli`)
+- The gws Claude plugin installed (done during setup)
+- Google account authenticated via `gws auth login`
 
 ### First-Time Setup
 
-The first time Mira tries to access your calendar, Claude will open a browser window asking you to sign in with Google and grant calendar permissions. This is a one-time setup.
+During installation, the setup script runs `gws auth setup` (creates a Google Cloud project with OAuth credentials) and `gws auth login` (browser-based Google sign-in). If you skipped this step, run them manually:
+
+```bash
+gws auth setup   # One-time: creates OAuth credentials
+gws auth login   # Signs in with your Google account
+```
 
 ### What Mira Can Do
 
@@ -598,7 +603,7 @@ Edit `~/Mira_Assistant/.claude/CLAUDE.md`. This is the file that defines who Mir
 
 Edit `~/Mira_Assistant/.claude/settings.local.json`. This controls what tools Mira can use without asking. The default set includes:
 
-- Google Calendar tools (list, create, update, delete events, check availability)
+- gws CLI commands (Google Calendar, Gmail, Drive, Sheets, Docs, etc.)
 - Discord tools (fetch messages, reply, download attachments, react)
 - Whisper transcription commands
 - FFmpeg audio conversion
@@ -703,12 +708,13 @@ The enhanced/premium macOS voices need to be downloaded separately.
 4. Find your voice (e.g., "Allison") and click the download arrow
 5. Wait for download to complete
 
-### Google Calendar not connecting
+### Google Workspace not connecting
 
 Possible causes:
-- You need a Claude **Max** or **Team** subscription
-- The gws plugin wasn't installed (run `claude plugin add gws`)
-- OAuth hasn't been completed yet (Mira will prompt you on first calendar access)
+- gws CLI not installed — run `npm install -g @googleworkspace/cli`
+- Not authenticated — run `gws auth login`
+- OAuth credentials not set up — run `gws auth setup` first
+- Check auth status with `gws auth status`
 
 ### Discord bot not responding
 
@@ -777,7 +783,6 @@ The settings.local.json might be missing permissions.
 ├── plugins/                         # Claude Code plugins
 │   ├── discord/
 │   ├── remember/
-│   ├── gws/
 │   └── ...
 ├── skills/
 │   └── gstack/                      # gstack skill library
@@ -835,10 +840,10 @@ User request ("schedule with Sarah")
   Missing info? ──yes──▶ Ask user (single follow-up)
        │ no
        ▼
-  Time specified? ──no──▶ gcal_find_meeting_times
+  Time specified? ──no──▶ gws calendar freebusy query
        │ yes                      │
        ▼                          ▼
-  gcal_find_my_free_time    Suggest 2-3 slots
+  gws calendar freebusy query Suggest 2-3 slots
        │                          │
        ▼                          ▼
   Conflict? ──yes──▶ Suggest nearest open slot
@@ -850,7 +855,7 @@ User request ("schedule with Sarah")
   User approves? ──no──▶ Adjust and re-confirm
        │ yes
        ▼
-  gcal_create_event (attendees get email invites)
+  gws calendar events create (attendees get email invites)
 ```
 
 ---

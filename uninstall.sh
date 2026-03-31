@@ -80,8 +80,14 @@ else
   echo -n "  Could not auto-detect workspace. Enter path to remove (or press Enter to skip): "
   if ! $AUTO_YES; then
     read -r user_path
+    user_path="${user_path/#\~/$HOME}"  # expand ~
     if [[ -n "$user_path" && -d "$user_path" ]]; then
-      if confirm "Remove workspace directory '$user_path'?"; then
+      # Safety: refuse to delete root, home dir, or paths with fewer than 3 components
+      local real_path; real_path=$(cd "$user_path" && pwd -P)
+      if [[ "$real_path" == "/" || "$real_path" == "$HOME" || "$real_path" == "/Users" || \
+            "$(echo "$real_path" | tr '/' '\n' | wc -l | tr -d ' ')" -lt 4 ]]; then
+        echo -e "${RED}  Refusing to remove '$real_path' — path is too broad.${RESET}"
+      elif confirm "Remove workspace directory '$user_path'?"; then
         rm -rf "$user_path"
         removed+=("Workspace: $user_path")
         success "Removed $user_path"
@@ -107,7 +113,8 @@ for app in ~/Applications/*.app; do
   [[ -d "$app" ]] || continue
   # Only remove apps that contain our launcher marker
   if grep -qr 'mira-assistant' "$app" 2>/dev/null || \
-     grep -qr 'claude.*--project-dir' "$app" 2>/dev/null; then
+     grep -qr 'claude.*--channels' "$app" 2>/dev/null || \
+     grep -qr 'com\.claude-assistant\.' "$app" 2>/dev/null; then
     if confirm "Remove launcher '$(basename "$app")'?"; then
       rm -rf "$app"
       removed+=("Launcher: $app")
@@ -246,7 +253,7 @@ done
 
 echo ""
 echo -e "  ✓ Homebrew packages (whisper-cpp, ffmpeg, node, bun, jq)"
-echo -e "  ✓ Claude Code plugins (discord, gws, remember, etc.)"
+echo -e "  ✓ Claude Code plugins (discord, remember, hookify, etc.)"
 echo -e "  ✓ Global Claude settings (~/.claude/settings.json)"
 echo -e "  ✓ Other Claude workspaces"
 echo ""

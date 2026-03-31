@@ -13,6 +13,7 @@ if [ -z "$INPUT" ]; then
 fi
 
 # Convert to wav if not already (whisper-cli works best with wav)
+TMPWAV=""
 EXT="${INPUT##*.}"
 if [ "$EXT" != "wav" ]; then
   TMPWAV=$(mktemp /tmp/whisper_XXXXXX.wav)
