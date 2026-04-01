@@ -41,7 +41,7 @@ cd mira-assistant-setup
 ./setup.sh
 ```
 
-The installer walks you through 9 phases, prompting for your name, role, timezone, and preferences. Most steps are automatic.
+The installer walks you through 8 phases, prompting for your name, role, timezone, and preferences. Most steps are automatic.
 
 ---
 
@@ -51,7 +51,6 @@ The installer walks you through 9 phases, prompting for your name, role, timezon
 |---|---|---|
 | System deps (whisper-cpp, ffmpeg, node, bun, jq) | via Homebrew | ~200MB |
 | Claude plugins (discord, remember, claude-md-management, hookify, superpowers) | `~/.claude/plugins/` | ~20MB |
-| gstack skills | `~/.claude/skills/gstack/` | ~5MB |
 | Whisper model (ggml-base.en.bin) | `~/.local/share/whisper-cpp/models/` | ~150MB |
 | Voice — standard (macOS say) | built-in | 0 |
 | Voice — premium (VibeVoice, optional) | `~/.local/share/vibevoice/` | ~2.5GB |
@@ -153,9 +152,6 @@ The installer detects this and offers to install Homebrew for you. Accept the pr
 
 **Voice not available in macOS say**
 The voice you selected may not be downloaded yet. Go to System Settings > Accessibility > Spoken Content > System Voice > Manage Voices and download it, then re-run `./setup.sh`.
-
-**gstack clone failed**
-The gstack repository may be private. The installer will print manual installation instructions if the clone fails. Follow those steps and then re-run `./setup.sh`.
 
 **Google Workspace not working**
 Run `gws auth status` to check if you're authenticated. If not, run `gws auth login`. If the gws CLI isn't installed, run `npm install -g @googleworkspace/cli`. If `gws auth setup` hasn't been run yet, run it first to create OAuth credentials.

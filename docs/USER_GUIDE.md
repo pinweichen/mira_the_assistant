@@ -101,7 +101,6 @@ This will install:
   * System dependencies (whisper-cpp, ffmpeg, node, bun, jq)
   * Claude Code plugins (discord, remember, claude-md-management,
                          hookify, superpowers)
-  * gstack skills
   * Whisper speech-to-text model (~150MB)
   * Voice setup (optional)
   * Personalized assistant workspace
@@ -124,7 +123,7 @@ Installs via Homebrew: `whisper-cpp`, `ffmpeg`, `node`, `bun`, `jq`
 
 Typical output:
 ```
-[1/9] Installing system dependencies...
+[1/8] Installing system dependencies...
   ✓ whisper-cpp (already installed)
   ✓ ffmpeg (already installed)
   Installing node...
@@ -152,15 +151,7 @@ Installs 6 plugins into Claude Code:
 
 ---
 
-#### Phase 3: gstack Skills
-
-Clones the gstack skill library to `~/.claude/skills/gstack/`.
-
-**What to do:** Nothing. If it fails (repo might be private), the installer prints manual instructions and continues.
-
----
-
-#### Phase 4: Whisper Model
+#### Phase 3: Whisper Model
 
 Downloads the English speech-to-text model (~150MB) to `~/.local/share/whisper-cpp/models/ggml-base.en.bin`.
 
@@ -204,7 +195,7 @@ After selecting, you'll be asked if you want to preview the voice. Say yes to he
 
 ---
 
-#### Phase 6: Personalization Prompts
+#### Phase 5: Personalization Prompts
 
 This is where you make it yours. You'll be asked 8 questions:
 
@@ -238,7 +229,7 @@ This is where you make it yours. You'll be asked 8 questions:
 
 ---
 
-#### Phase 7: Discord Setup
+#### Phase 6: Discord Setup
 
 ```
   Set up Discord messaging? (y/N):
@@ -257,7 +248,7 @@ Paste your bot token. The characters won't appear on screen (this is normal, it'
 
 ---
 
-#### Phase 8: Launcher App
+#### Phase 7: Launcher App
 
 ```
   The launcher can start your assistant without per-action prompts.
@@ -277,7 +268,7 @@ Paste your bot token. The characters won't appear on screen (this is normal, it'
 
 ---
 
-#### Phase 9: Done!
+#### Phase 8: Done!
 
 ```
   ┌─────────────────────────────────────────────┐
@@ -386,7 +377,7 @@ Mira will:
 
 ### Receiving Voice Replies
 
-If you set up a voice in Phase 5, Mira can reply with audio:
+If you set up a voice in Phase 4, Mira can reply with audio:
 
 - She generates speech using your chosen voice
 - Converts it to Discord-compatible format (opus/ogg)
@@ -478,7 +469,7 @@ gws auth login   # Signs in with your Google account
 
 - Mira checks **all** your calendars (work, personal, family) before scheduling
 - Default meeting duration is 30 minutes unless you specify otherwise
-- Google Meet links are added based on your setup preference (Phase 6 prompt)
+- Google Meet links are added based on your setup preference (Phase 5 prompt)
 - Your work email receives invites for all events so they appear in Outlook/etc.
 
 ---
@@ -662,7 +653,6 @@ The uninstaller is conservative. It prompts before every removal:
 |---|---|
 | Workspace directory | ~/Mira_Assistant/ |
 | Launcher app | ~/Applications/Mira.app |
-| gstack skills | ~/.claude/skills/gstack/ |
 | Whisper model | ~/.local/share/whisper-cpp/models/ggml-base.en.bin |
 | Discord config | ~/.claude/channels/discord/.env |
 | VibeVoice (if installed) | pip package + model cache |
@@ -785,7 +775,6 @@ The settings.local.json might be missing permissions.
 │   ├── remember/
 │   └── ...
 ├── skills/
-│   └── gstack/                      # gstack skill library
 └── channels/
     └── discord/
         └── .env                     # Discord bot token (chmod 600)

@@ -132,26 +132,8 @@ if [[ $app_count -eq 0 ]]; then
   preserved+=("Launcher: (none found)")
 fi
 
-# ── 3. gstack skills ──────────────────────────────────────────────────────────
-info "Step 3: gstack skills (~/.claude/skills/gstack)"
-
-GSTACK_DIR="$HOME/.claude/skills/gstack"
-if [[ -d "$GSTACK_DIR" ]]; then
-  if confirm "Remove gstack skills at '$GSTACK_DIR'?"; then
-    rm -rf "$GSTACK_DIR"
-    removed+=("gstack skills: $GSTACK_DIR")
-    success "Removed gstack skills"
-  else
-    preserved+=("gstack skills: $GSTACK_DIR")
-    skip "$GSTACK_DIR"
-  fi
-else
-  skip "gstack skills not found at $GSTACK_DIR"
-  preserved+=("gstack skills: (not installed)")
-fi
-
-# ── 4. Whisper model ──────────────────────────────────────────────────────────
-info "Step 4: Whisper model file"
+# ── 3. Whisper model ──────────────────────────────────────────────────────────
+info "Step 3: Whisper model file"
 
 WHISPER_MODEL="$HOME/.local/share/whisper-cpp/models/ggml-base.en.bin"
 if [[ -f "$WHISPER_MODEL" ]]; then
@@ -172,8 +154,8 @@ else
   preserved+=("Whisper model: (not installed)")
 fi
 
-# ── 5. Discord config ─────────────────────────────────────────────────────────
-info "Step 5: Discord bot config (~/.claude/channels/discord/.env)"
+# ── 4. Discord config ─────────────────────────────────────────────────────────
+info "Step 4: Discord bot config (~/.claude/channels/discord/.env)"
 
 DISCORD_ENV="$HOME/.claude/channels/discord/.env"
 if [[ -f "$DISCORD_ENV" ]]; then
@@ -191,8 +173,8 @@ else
   preserved+=("Discord config: (not installed)")
 fi
 
-# ── 6. VibeVoice (if installed) ───────────────────────────────────────────────
-info "Step 6: VibeVoice premium TTS (if installed)"
+# ── 5. VibeVoice (if installed) ───────────────────────────────────────────────
+info "Step 5: VibeVoice premium TTS (if installed)"
 
 vv_installed=false
 if python3 -c "import vibevoice" 2>/dev/null; then

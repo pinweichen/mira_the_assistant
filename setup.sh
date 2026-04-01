@@ -184,7 +184,6 @@ BANNER
   echo "  • System dependencies (whisper-cpp, ffmpeg, node, bun, jq)"
   echo "  • Claude Code plugins (discord, remember, claude-md-management,"
   echo "                         hookify, superpowers, gws)"
-  echo "  • gstack skills"
   echo "  • Whisper speech-to-text model (~150MB)"
   echo "  • Voice setup (optional)"
   echo "  • Personalized assistant workspace"
@@ -204,10 +203,10 @@ BANNER
 
 phase_system_deps() {
   if _phase_done "system_deps"; then
-    section "[1/9] System dependencies — already done, skipping"
+    section "[1/8] System dependencies — already done, skipping"
     return
   fi
-  section "[1/9] Installing system dependencies..."
+  section "[1/8] Installing system dependencies..."
 
   # Prevent brew from auto-updating on every install (saves minutes)
   export HOMEBREW_NO_AUTO_UPDATE=1
@@ -256,10 +255,10 @@ phase_system_deps() {
 
 phase_plugins() {
   if _phase_done "plugins"; then
-    section "[2/9] Claude Code plugins — already done, skipping"
+    section "[2/8] Claude Code plugins — already done, skipping"
     return
   fi
-  section "[2/9] Installing Claude Code plugins..."
+  section "[2/8] Installing Claude Code plugins..."
 
   local plugins=(discord remember claude-md-management hookify superpowers)
 
@@ -315,49 +314,16 @@ phase_plugins() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Phase 3: gstack Skills
 # ══════════════════════════════════════════════════════════════════════════════
-
-phase_gstack() {
-  if _phase_done "gstack"; then
-    section "[3/9] gstack skills — already done, skipping"
-    return
-  fi
-  section "[3/9] Installing gstack skills..."
-  local gstack_dir="$HOME/.claude/skills/gstack"
-
-  if [[ -d "$gstack_dir/.git" ]]; then
-    info "gstack already installed, updating..."
-    if git -C "$gstack_dir" pull origin main 2>/dev/null; then
-      info "gstack updated"
-    else
-      warn "Could not update gstack (offline or repo access issue)"
-    fi
-  else
-    mkdir -p "$HOME/.claude/skills"
-    if git clone https://github.com/garrytan/gstack.git "$gstack_dir" 2>/dev/null; then
-      info "gstack installed"
-    else
-      warn "Could not clone gstack (may be private or network unavailable)"
-      echo ""
-      echo "  Manual install:"
-      echo "    git clone https://github.com/garrytan/gstack.git ~/.claude/skills/gstack"
-      echo ""
-    fi
-  fi
-  _mark_done "gstack"
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Phase 4: Whisper Model
+# Phase 3: Whisper Model
 # ══════════════════════════════════════════════════════════════════════════════
 
 phase_whisper() {
   if _phase_done "whisper"; then
-    section "[5/9] Whisper model — already done, skipping"
+    section "[4/8] Whisper model — already done, skipping"
     return
   fi
-  section "[5/9] Setting up Whisper speech-to-text model..."
+  section "[4/8] Setting up Whisper speech-to-text model..."
   local model_dir="$HOME/.local/share/whisper-cpp/models"
 
   # Use English-only model for en, multilingual model for all other languages
@@ -432,11 +398,11 @@ phase_whisper() {
 
 phase_voice() {
   if _phase_done "voice"; then
-    section "[4/9] Voice setup — already done, skipping"
+    section "[3/8] Voice setup — already done, skipping"
     _load_inputs  # restore VOICE_ENGINE/VOICE_NAME for later phases
     return
   fi
-  section "[4/9] Voice setup..."
+  section "[3/8] Voice setup..."
   echo ""
   echo "  Choose a language for voice (speech-to-text and text-to-speech):"
   echo ""
@@ -714,11 +680,11 @@ _setup_vibevoice() {
 
 phase_scaffolding() {
   if _phase_done "scaffolding"; then
-    section "[6/9] Workspace scaffolding — already done, skipping"
+    section "[5/8] Workspace scaffolding — already done, skipping"
     _load_inputs  # restore all vars for later phases
     return
   fi
-  section "[6/9] Setting up your assistant workspace..."
+  section "[5/8] Setting up your assistant workspace..."
   echo ""
 
   # ── Gather inputs (restore saved values as defaults if resuming) ─────────────
@@ -964,10 +930,10 @@ phase_scaffolding() {
 
 phase_discord() {
   if _phase_done "discord"; then
-    section "[7/9] Discord setup — already done, skipping"
+    section "[6/8] Discord setup — already done, skipping"
     return
   fi
-  section "[7/9] Discord setup..."
+  section "[6/8] Discord setup..."
   echo -n "  Set up Discord messaging? (y/N): "
   read -r setup_discord
 
@@ -1150,11 +1116,11 @@ phase_gws_auth() {
 
 phase_launcher() {
   if _phase_done "launcher"; then
-    section "[8/9] Launcher app — already done, skipping"
+    section "[7/8] Launcher app — already done, skipping"
     _load_inputs  # restore SKIP_PERMISSIONS and ASSISTANT_NAME for summary
     return
   fi
-  section "[8/9] Creating macOS launcher app..."
+  section "[7/8] Creating macOS launcher app..."
 
   # ── Consent prompt for --dangerously-skip-permissions ────────────────────────
 
@@ -1276,7 +1242,7 @@ STARTSH_EOF
 phase_summary() {
   # Ensure all variables are loaded (needed when earlier phases were skipped)
   [[ -z "$ASSISTANT_NAME" ]] && _load_inputs
-  section "[9/9] Setup complete!"
+  section "[8/8] Setup complete!"
   echo ""
   echo "  ┌─────────────────────────────────────────────┐"
   printf "  │  %-43s │\n" "${ASSISTANT_NAME} Assistant is ready!"
@@ -1346,7 +1312,6 @@ main() {
   phase_preflight
   phase_system_deps
   phase_plugins
-  phase_gstack
   phase_voice
   phase_whisper
   phase_scaffolding
